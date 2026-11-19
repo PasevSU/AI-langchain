@@ -20,6 +20,7 @@ from .util import atomic_write_text, dump_json, read_text, utc_now
 
 STATE_SCHEMA = "pasevsu.installer.state.v1"
 LOCK_TTL_S = 3600
+HISTORY_LIMIT = 20
 GITIGNORE_BODY = """# Managed by the installer agent -- runtime artefacts, never committed.
 backups/
 *.tmp
@@ -108,6 +109,19 @@ class StateStore:
         merged["phase"] = phase
         merged.update(extra)
         return self.save(merged)
+
+    def record_run(self, state: dict[str, Any], entry: dict[str, Any]) -> dict[str, Any]:
+        """Append one run to the capped ``history`` list.
+
+        The caller decides when to persist: a history record is always written
+        together with the phase it describes, never on its own.
+        """
+        merged = dict(state)
+        previous = merged.get("history") or []
+        history = [dict(item) for item in previous if isinstance(item, dict)]
+        history.append(dict(entry))
+        merged["history"] = history[-HISTORY_LIMIT:]
+        return merged
 
     # -- locking --------------------------------------------------------
     @contextmanager

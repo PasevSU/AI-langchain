@@ -396,10 +396,45 @@ def _run_locked(
 
     state["runs"] = int(state.get("runs", 0)) + 1
     state["first_run_completed_at"] = state.get("first_run_completed_at") or utc_now()
+    state = store.record_run(
+        state,
+        _history_entry(
+            journal,
+            execution,
+            phase="done",
+            version=version,
+            fingerprint=selection.fingerprint,
+            publication=publication,
+        ),
+    )
     state = _phase(store, journal, state, "done", plan_fingerprint=selection.fingerprint)
     _record(tests, publication)
     _out("Готово: миграцията приключи.")
     return EXIT_OK
+
+
+def _history_entry(
+    journal: Journal,
+    execution: ExecutionResult,
+    *,
+    phase: str,
+    version: str,
+    fingerprint: str,
+    publication: Publication | None = None,
+) -> dict[str, Any]:
+    """Build one ``history`` record describing a finished run."""
+    return {
+        "at": utc_now(),
+        "run": journal.run_id,
+        "phase": phase,
+        "version": version,
+        "tasks": len(execution.outcomes),
+        "applied": len(execution.applied),
+        "paths": list(execution.changed_paths),
+        "fingerprint": fingerprint,
+        "commit": publication.commit if publication is not None else None,
+        "tag": publication.tag if publication is not None else None,
+    }
 
 
 def _publish(
@@ -658,6 +693,15 @@ def _status(config: Config) -> int:
     publication = state.get("publish") or {}
     if publication:
         _out(f"  публикуване: {publication.get('status')} · {publication.get('tag') or '—'}")
+    history = state.get("history") or []
+    if history:
+        last = history[-1]
+        _out(
+            f"  история: {len(history)} пуска · последен {last.get('at')} "
+            f"({last.get('phase')}, {last.get('applied', 0)} променени задачи)"
+        )
+    else:
+        _out("  история: (празна)")
     _out(f"  отчет: {store.artifacts('report.md')}")
     _out(f"  журнал: {store.artifacts('journal.jsonl')}")
     if is_repository(config.root):
