@@ -60,6 +60,22 @@ def _err(text: str) -> None:
     sys.stderr.write(text + "\n")
 
 
+def _phase(
+    store: StateStore,
+    journal: Journal,
+    state: dict[str, Any],
+    phase: str,
+    **extra: Any,
+) -> dict[str, Any]:
+    """Move state and journal to ``phase`` at the same moment.
+
+    The journal records every event with the phase it belongs to; keeping both
+    in one helper makes it impossible for the two to drift apart.
+    """
+    journal.set_phase(phase)
+    return store.mark(state, phase, **extra)
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Return the argument parser used by :func:`run`."""
     parser = argparse.ArgumentParser(
@@ -250,14 +266,14 @@ def _run_locked(
         agents=list(agents),
         revision=revision(config.root) if is_repository(config.root) else {},
     )
-    state = store.mark(state, "selection", version=version)
+    state = _phase(store, journal, state, "selection", version=version)
     if first_run and not dry_run:
         state["first_run_started_at"] = state.get("first_run_started_at") or utc_now()
 
     try:
         declarations = load_declarations(config.registry_path)
     except RegistryError as exc:
-        store.save(store.mark(state, "registry-failed", error=str(exc)))
+        store.save(_phase(store, journal, state, "registry-failed", error=str(exc)))
         raise
     journal.append("registry", summary=summarise_registry(declarations))
 
@@ -267,11 +283,11 @@ def _run_locked(
     journal.append("selection", **selection_report.to_dict())
     _print_selection(selection_report, dry_run=dry_run)
     if selection.empty:
-        store.save(store.mark(state, "done-empty"))
+        store.save(_phase(store, journal, state, "done-empty"))
         _out("Няма заявени промени за прилагане — нищо не е променено.")
         return EXIT_OK
 
-    state = store.mark(state, "backup", plan_fingerprint=selection.fingerprint)
+    state = _phase(store, journal, state, "backup", plan_fingerprint=selection.fingerprint)
     if dry_run:
         backup = Backup(
             id="dry-run",
@@ -301,7 +317,7 @@ def _run_locked(
     state["backup"] = backup.to_dict()
     state = store.save(state)
 
-    state = store.mark(state, "apply")
+    state = _phase(store, journal, state, "apply")
     execution = execute(selection, config.root, dry_run=dry_run, journal=journal)
     state["tasks"] = merge_state_tasks(state.get("tasks", {}), execution, dry_run=dry_run)
     state["plan_fingerprint"] = selection.fingerprint
@@ -323,7 +339,9 @@ def _run_locked(
         )
 
     if not execution.ok:
-        state = store.save(store.mark(state, "apply-failed", stopped_at=execution.stopped_at))
+        state = store.save(
+            _phase(store, journal, state, "apply-failed", stopped_at=execution.stopped_at)
+        )
         _record(None, None)
         return EXIT_FAILED
 
@@ -337,14 +355,14 @@ def _run_locked(
 
     tests: TestReport | None = None
     if run_tests and not dry_run:
-        state = store.save(store.mark(state, "tests"))
+        state = store.save(_phase(store, journal, state, "tests"))
         tests = run_suites(config, journal=journal)
         state["suites"] = [item.to_dict() for item in tests.suites]
         state = store.save(state)
         _print_tests(tests)
         if tests.blocking:
             state = store.save(
-                store.mark(state, "tests-failed", blocking=list(blockers(tests)))
+                _phase(store, journal, state, "tests-failed", blocking=list(blockers(tests)))
             )
             _record(tests, None)
             return EXIT_FAILED
@@ -366,19 +384,19 @@ def _run_locked(
             state["first_run_completed_at"] = (
                 state.get("first_run_completed_at") or utc_now()
             )
-            state = store.save(store.mark(state, "publish-failed"))
+            state = store.save(_phase(store, journal, state, "publish-failed"))
             _record(tests, publication)
             return EXIT_FAILED
 
     if dry_run:
-        state = store.save(store.mark(state, "planned"))
+        state = store.save(_phase(store, journal, state, "planned"))
         _record(tests, publication)
         _out("Пробен пуск: нищо не е променено.")
         return EXIT_OK
 
     state["runs"] = int(state.get("runs", 0)) + 1
     state["first_run_completed_at"] = state.get("first_run_completed_at") or utc_now()
-    state = store.mark(state, "done", plan_fingerprint=selection.fingerprint)
+    state = _phase(store, journal, state, "done", plan_fingerprint=selection.fingerprint)
     _record(tests, publication)
     _out("Готово: миграцията приключи.")
     return EXIT_OK
