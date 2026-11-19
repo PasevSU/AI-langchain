@@ -93,6 +93,39 @@ class IndexHelpersTest(unittest.TestCase):
             self.assertTrue(gitops.tag(root, "installer-v0.1.0", "първи").ok)
             self.assertTrue(gitops.tag_exists(root, "installer-v0.1.0"))
 
+    def test_staged_stat_counts_the_very_first_commit(self) -> None:
+        with temp_root() as root:
+            run_command([GIT, "init", "-b", "master"], cwd=root, timeout=120)
+            write_text(root, "a.txt", "one\ntwo\n")
+            self.assertTrue(gitops.stage(root, ["a.txt"]).ok)
+
+            stat = gitops.staged_stat(root)
+
+            self.assertEqual(stat["files"], 1)
+            self.assertEqual(stat["added"], 2)
+            self.assertEqual(stat["removed"], 0)
+
+    def test_unstage_works_before_the_first_commit(self) -> None:
+        with temp_root() as root:
+            run_command([GIT, "init", "-b", "master"], cwd=root, timeout=120)
+            write_text(root, "a.txt", "one\n")
+            self.assertTrue(gitops.stage(root, ["a.txt"]).ok)
+            self.assertEqual(gitops.staged_paths(root), ["a.txt"])
+
+            gitops.unstage(root, ["a.txt"])
+
+            self.assertEqual(gitops.staged_paths(root), [])
+
+    def test_unstage_ignores_an_empty_path_list(self) -> None:
+        with temp_root() as root:
+            _init_repo(root)
+            write_text(root, "seed.txt", "changed\n")
+            self.assertTrue(gitops.stage(root, ["seed.txt"]).ok)
+
+            gitops.unstage(root, [])
+
+            self.assertEqual(gitops.staged_paths(root), ["seed.txt"])
+
 
 if __name__ == "__main__":
     unittest.main()
