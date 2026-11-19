@@ -125,12 +125,50 @@ def stage(root: Path, paths: list[str]) -> CompletedCommand:
     return git(root, "add", "--", *paths)
 
 
+def unstage(root: Path, paths: list[str]) -> None:
+    """Remove ``paths`` from the index and leave the working tree alone.
+
+    ``git reset`` is called without ``HEAD`` on purpose: a pathspec reset needs
+    no commit, so it also works in a repository whose first commit the installer
+    is about to create.
+    """
+    if paths:
+        git(root, "reset", "-q", "--", *paths)
+
+
 def staged_paths(root: Path) -> list[str]:
     """List the paths staged in the index that differ from ``HEAD``."""
     result = git(root, "diff", "--cached", "--name-only", "-z")
     if not result.ok:
         return []
     return [item for item in result.stdout.split("\0") if item]
+
+
+def staged_stat(root: Path) -> dict[str, int]:
+    """Count the files and lines currently staged in the index.
+
+    Binary files report ``-`` in both counters; that is counted as zero lines.
+    """
+    result = git(root, "diff", "--cached", "--numstat")
+    if not result.ok:
+        raise OperationError(f"git diff --cached се провали: {result.stderr.strip()}")
+    stat = {"files": 0, "added": 0, "removed": 0}
+    for line in result.stdout.splitlines():
+        parts = line.split("\t")
+        if len(parts) < 3:  # noqa: PLR2004
+            continue
+        stat["files"] += 1
+        stat["added"] += _numstat(parts[0])
+        stat["removed"] += _numstat(parts[1])
+    return stat
+
+
+def _numstat(raw: str) -> int:
+    """Parse one ``--numstat`` counter, treating ``-`` (binary) as zero."""
+    try:
+        return int(raw)
+    except ValueError:
+        return 0
 
 
 def tag_exists(root: Path, name: str) -> bool:

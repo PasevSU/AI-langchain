@@ -421,27 +421,11 @@ def _publish(
         config,
         version=version,
         paths=paths,
-        summary=_commit_summary(execution),
+        summary="",
         body=body,
         journal=journal,
         dry_run=dry_run,
     )
-
-
-def _commit_summary(execution: ExecutionResult) -> str:
-    """Describe the run honestly: verified tasks first, real writes second.
-
-    A re-run of an idempotent migration changes nothing, so ``applied`` is empty;
-    calling that "миграция на 0 задачи" would hide the fact that the whole
-    migration was verified.
-    """
-    total = len(execution.outcomes)
-    changed = len(execution.applied)
-    if not total:
-        return "миграция без задачи"
-    if changed:
-        return f"миграция: {changed} от {total} задачи с промени"
-    return f"миграция: {total} задачи проверени, без промени"
 
 
 def _publish_paths(config: Config, applied: list[str], note_rel: str) -> list[str]:

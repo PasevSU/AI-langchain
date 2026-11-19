@@ -9,13 +9,14 @@ version. Pushing is opt-in.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from . import gitops
 from .config import Config
-from .errors import PublishError
+from .errors import OperationError, PublishError
 from .journal import Journal
 from .util import atomic_write_text, dump_json, utc_now
 
@@ -25,6 +26,7 @@ FAILED = "failed"
 
 PROTECTED_BRANCHES = frozenset({"master", "main"})
 _VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$")
+DIFF_NOTHING = "миграция без промени във файловете"
 
 
 @dataclass(frozen=True)
@@ -69,6 +71,26 @@ def commit_message(config: Config, *, version: str, summary: str, body: str = ""
     return "\n".join(sections).rstrip("\n") + "\n"
 
 
+def diff_summary(stat: Mapping[str, Any], *, dry_run: bool = False) -> str:
+    """Describe what the staged diff really contains.
+
+    Task outcomes say what the plan *wanted* to do; the index says what git will
+    actually record. The second is the only honest source for a commit headline.
+    When the line counters are unknown (a run that never staged anything) the
+    summary degrades to the file count instead of inventing ``+0/-0``.
+    """
+    files = int(stat.get("files", 0) or 0)
+    if not files:
+        return DIFF_NOTHING
+    added = stat.get("added")
+    removed = stat.get("removed")
+    if added is None or removed is None:
+        text = f"миграция: {files} файла"
+    else:
+        text = f"миграция: {files} файла, +{int(added)}/-{int(removed)} реда"
+    return f"пробен пуск — {text}" if dry_run else text
+
+
 def publish(
     config: Config,
     *,
@@ -98,10 +120,15 @@ def publish(
     if not dry_run and target_branch != current:
         _switch_branch(root, target_branch)
 
-    message = commit_message(config, version=version, summary=summary, body=body)
     tag_name = f"{config.tag_prefix}{version}"
 
     if dry_run:
+        message = commit_message(
+            config,
+            version=version,
+            summary=summary or diff_summary({"files": len(files)}, dry_run=True),
+            body=body,
+        )
         return Publication(
             SKIPPED,
             reason="пробен пуск (dry-run) — нищо не е ангажирано",
@@ -111,20 +138,38 @@ def publish(
             message=message,
         )
 
-    if not _commit_allowed(message):
-        raise PublishError("съобщението за commit не съдържа задължителен scope")
-
     staged = gitops.stage(root, files)
     if not staged.ok:
         raise PublishError(f"git add се провали: {_error_tail(staged)}")
 
-    reason = ""
-    if gitops.staged_paths(root):
-        created = gitops.commit(root, message, files)
-        if not created.ok:
-            raise PublishError(f"git commit се провали: {_error_tail(created)}")
-    else:
-        reason = "нищо ново за ангажиране — публикуван е текущият HEAD"
+    try:
+        stat = gitops.staged_stat(root)
+        message = commit_message(
+            config,
+            version=version,
+            summary=summary or diff_summary(stat),
+            body=body,
+        )
+        if not _commit_allowed(message):
+            raise PublishError("съобщението за commit не съдържа задължителен scope")
+        if journal is not None:
+            journal.append(
+                "diff",
+                files=stat["files"],
+                added=stat["added"],
+                removed=stat["removed"],
+                headline=message.splitlines()[0],
+            )
+        reason = ""
+        if gitops.staged_paths(root):
+            created = gitops.commit(root, message, files)
+            if not created.ok:
+                raise PublishError(f"git commit се провали: {_error_tail(created)}")
+        else:
+            reason = "нищо ново за ангажиране — публикуван е текущият HEAD"
+    except (PublishError, OperationError):
+        gitops.unstage(root, files)
+        raise
     commit_sha = _head(root)
 
     if not gitops.tag_exists(root, tag_name):
