@@ -36,7 +36,7 @@ from .selection import Selection, SelectionReport, select
 from .state import StateStore
 from .tests_runner import SuiteOutcome, TestReport, advisories, blockers, run_suites
 
-__version__ = "0.1.13"
+__version__ = "0.1.14"
 
 __all__ = [
     "AgentDeclaration",
