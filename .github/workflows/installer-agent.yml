@@ -5,13 +5,24 @@ on:
   pull_request:
     paths:
       - "installer/**"
+      - ".github/workflows/installer-agent.yml"
   push:
-    branches: [master]
+    branches:
+      - master
+      - "installer/**"
     paths:
       - "installer/**"
+      - ".github/workflows/installer-agent.yml"
 
 permissions:
   contents: read
+
+env:
+  # Заковани версии: CI трябва да съди по същите правила, по които съди и
+  # издателят. Незакована версия прави „мина" невъзпроизводимо.
+  RUFF_VERSION: "0.16.1"
+  MYPY_VERSION: "2.3.0"
+  PYTHON_VERSION: "3.12"
 
 jobs:
   unit:
@@ -22,10 +33,33 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Compile package
         run: python -m compileall -q installer/pasevsu_installer
 
       - name: Unit tests
         run: python -m unittest discover -s installer/tests -t installer -v
+
+  lint:
+    name: installer lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install pinned linters
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "ruff==${{ env.RUFF_VERSION }}" "mypy==${{ env.MYPY_VERSION }}"
+
+      - name: Ruff
+        working-directory: installer
+        run: ruff check .
+
+      - name: Mypy
+        working-directory: installer
+        run: mypy pasevsu_installer

@@ -59,13 +59,19 @@ class StateStore:
         return self.path.exists()
 
     def load(self) -> dict[str, Any]:
-        """Load the state, returning an empty mapping when absent."""
+        """Load the state, returning an empty mapping when absent.
+
+        A file that parses but is not a JSON object is treated the same way as
+        a missing one: the caller gets a mapping it can merge into, never a
+        list or a scalar it would have to guard against.
+        """
         if not self.path.exists():
             return {}
         try:
-            return json.loads(read_text(self.path))
+            payload = json.loads(read_text(self.path))
         except json.JSONDecodeError as exc:
             raise StateError(f"повреден state файл: {self.path} ({exc})") from exc
+        return payload if isinstance(payload, dict) else {}
 
     def save(self, data: dict[str, Any]) -> dict[str, Any]:
         """Persist ``data`` atomically, refreshing the ``updated_at`` stamp."""
@@ -149,9 +155,10 @@ class StateStore:
 
     def _read_lock(self) -> dict[str, Any]:
         try:
-            return json.loads(read_text(self.lock_path))
+            payload = json.loads(read_text(self.lock_path))
         except (OSError, json.JSONDecodeError):
             return {}
+        return payload if isinstance(payload, dict) else {}
 
     def _lock_age_s(self) -> float | None:
         try:
