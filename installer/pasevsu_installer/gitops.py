@@ -127,6 +127,20 @@ def stage(root: Path, paths: list[str]) -> CompletedCommand:
     return git(root, "add", "--", *paths)
 
 
+def staged_paths(root: Path) -> list[str]:
+    """List the paths staged in the index that differ from ``HEAD``."""
+    result = git(root, "diff", "--cached", "--name-only", "-z")
+    if not result.ok:
+        return []
+    return [item for item in result.stdout.split("\0") if item]
+
+
+def tag_exists(root: Path, name: str) -> bool:
+    """Whether a tag called ``name`` already exists."""
+    result = git(root, "rev-parse", "--verify", "--quiet", f"refs/tags/{name}")
+    return result.ok
+
+
 def commit(root: Path, message: str, paths: list[str]) -> CompletedCommand:
     """Stage ``paths`` and create a commit with ``message``."""
     staged = stage(root, paths)

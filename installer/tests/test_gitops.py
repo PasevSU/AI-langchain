@@ -23,6 +23,9 @@ def _init_repo(root: Path) -> None:
         ("commit.gpgsign", "false"),
     ):
         run_command([GIT, "config", key, value], cwd=root, timeout=120)
+    write_text(root, "seed.txt", "seed\n")
+    run_command([GIT, "add", "seed.txt"], cwd=root, timeout=120)
+    run_command([GIT, "commit", "-m", "chore: seed"], cwd=root, timeout=120)
 
 
 @unittest.skipIf(GIT is None, "git липсва в PATH")
@@ -67,6 +70,28 @@ class BranchHelpersTest(unittest.TestCase):
 
             self.assertTrue(gitops.branch_exists(root, "master"))
             self.assertFalse(gitops.branch_exists(root, "installer/0.1.0"))
+
+
+@unittest.skipIf(GIT is None, "git липсва в PATH")
+class IndexHelpersTest(unittest.TestCase):
+    """The index and tag probes must be booleans/lists, never command objects."""
+
+    def test_staged_paths_reports_only_staged_work(self) -> None:
+        with temp_root() as root:
+            _init_repo(root)
+            write_text(root, "seed.txt", "changed\n")
+            self.assertEqual(gitops.staged_paths(root), [])
+
+            self.assertTrue(gitops.stage(root, ["seed.txt"]).ok)
+            self.assertEqual(gitops.staged_paths(root), ["seed.txt"])
+
+    def test_tag_exists_follows_created_tags(self) -> None:
+        with temp_root() as root:
+            _init_repo(root)
+            self.assertFalse(gitops.tag_exists(root, "installer-v0.1.0"))
+
+            self.assertTrue(gitops.tag(root, "installer-v0.1.0", "първи").ok)
+            self.assertTrue(gitops.tag_exists(root, "installer-v0.1.0"))
 
 
 if __name__ == "__main__":

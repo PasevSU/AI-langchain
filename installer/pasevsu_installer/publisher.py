@@ -123,26 +123,31 @@ def publish(
     if not staged.ok:
         raise PublishError(f"git add се провали: {_error_tail(staged)}")
 
-    created = gitops.commit(root, message, files)
-    if not created.ok:
-        raise PublishError(f"git commit се провали: {_error_tail(created)}")
+    reason = ""
+    if gitops.staged_paths(root):
+        created = gitops.commit(root, message, files)
+        if not created.ok:
+            raise PublishError(f"git commit се провали: {_error_tail(created)}")
+    else:
+        reason = "нищо ново за ангажиране — публикуван е текущият HEAD"
     commit_sha = _head(root)
 
-    tagged = gitops.tag(root, tag_name, f"{config.name} {version}")
-    if not tagged.ok:
-        raise PublishError(f"git tag се провали: {_error_tail(tagged)}")
+    if not gitops.tag_exists(root, tag_name):
+        tagged = gitops.tag(root, tag_name, f"{config.name} {version}")
+        if not tagged.ok:
+            raise PublishError(f"git tag се провали: {_error_tail(tagged)}")
 
     pushed: list[str] = []
     if config.push:
         for refspec in (target_branch, tag_name):
-            sent = gitops.push(root, "origin", refspec)
+            sent = _push_with_retry(root, refspec)
             if not sent.ok:
                 raise PublishError(f"git push {refspec} се провали: {_error_tail(sent)}")
             pushed.append(refspec)
 
     publication = Publication(
         PUBLISHED,
-        reason="",
+        reason=reason,
         branch=target_branch,
         commit=commit_sha,
         tag=tag_name,
@@ -198,6 +203,36 @@ def _normalise_paths(root: Path, paths: tuple[str, ...] | list[str]) -> list[str
     if not inside:
         inside = gitops.changed_paths(root)
     return [item for item in inside if not _is_state_path(item)]
+
+
+PUSH_ATTEMPTS = 3
+
+
+def _push_with_retry(root: Path, refspec: str) -> Any:
+    """Push ``refspec`` and retry the transient failures that DNS/network raise."""
+    last: Any = None
+    for _ in range(PUSH_ATTEMPTS):
+        last = gitops.push(root, "origin", refspec)
+        if last.ok:
+            return last
+        if not _transient(last):
+            return last
+    return last
+
+
+def _transient(result: Any) -> bool:
+    """Whether a push failure looks like a temporary network problem."""
+    text = f"{result.stdout}\n{result.stderr}".lower()
+    markers = (
+        "getaddrinfo",
+        "could not resolve host",
+        "connection reset",
+        "connection timed out",
+        "temporary failure in name resolution",
+        "remote end hung up",
+        "rpc failed",
+    )
+    return any(marker in text for marker in markers)
 
 
 def _switch_branch(root: Path, branch: str) -> None:

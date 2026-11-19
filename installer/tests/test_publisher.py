@@ -204,6 +204,33 @@ class ProtectedBranchTest(unittest.TestCase):
         self.assertEqual(current.stdout.strip(), "installer/0.1.0")
 
 
+@unittest.skipIf(GIT is None, "git липсва в PATH")
+class RepublishTest(unittest.TestCase):
+    """A second run with nothing new must still succeed instead of crashing."""
+
+    def test_second_publish_reuses_the_existing_release(self) -> None:
+        with temp_root() as root:
+            _init_repo(root)
+            write_text(root, "a.txt", "x\n")
+            config = _config(root, push=False)
+            first = publish(
+                config, version="0.1.0", paths=("a.txt",), summary="добавя инсталатор"
+            )
+            second = publish(
+                config, version="0.1.0", paths=("a.txt",), summary="добавя инсталатор"
+            )
+            log = run_command([GIT, "rev-list", "--count", "HEAD"], cwd=root, timeout=120)
+            tags = run_command(
+                [GIT, "tag", "--list", "installer-v*"], cwd=root, timeout=120
+            )
+        self.assertEqual(first.status, PUBLISHED, first.message)
+        self.assertEqual(second.status, PUBLISHED, second.message)
+        self.assertEqual(log.stdout.strip(), "2")
+        self.assertEqual(tags.stdout.strip(), "installer-v0.1.0")
+        self.assertIn("нищо ново", second.reason)
+        self.assertEqual(second.commit, first.commit)
+
+
 class PathNormalisationTest(unittest.TestCase):
     """Publish paths are cleaned without eating a leading dot directory."""
 
