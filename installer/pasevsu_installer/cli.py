@@ -467,7 +467,8 @@ def _print_tests(tests: TestReport) -> None:
 
 def _print_publication(publication: Publication) -> None:
     if publication.status == "published":
-        _out(f"Публикувано: {publication.branch} · {publication.commit[:12]} · таг {publication.tag}")
+        commit = publication.commit or ""
+        _out(f"Публикувано: {publication.branch} · {commit[:12]} · таг {publication.tag}")
         return
     _out(f"Публикуване: {publication.status} — {publication.reason}")
 

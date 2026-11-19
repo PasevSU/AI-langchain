@@ -124,7 +124,7 @@ MUTATING_OPS = frozenset(
 )
 
 
-def dump_fingerprint(payload: dict[str, Any]) -> str:
+def dump_fingerprint(payload: Any) -> str:
     """Serialise ``payload`` canonically for hashing."""
     import json
 
