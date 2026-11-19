@@ -137,6 +137,24 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(payload["duration_ms"], 5)
         self.assertTrue(record.ok)
 
+    def test_env_is_merged_with_the_inherited_environment(self) -> None:
+        # Replacing the environment drops SystemRoot on Windows and breaks DNS,
+        # which used to make `git push` fail with "getaddrinfo() thread failed".
+        probe = (
+            "import os;"
+            "print(os.environ.get('PASEVSU_PROBE', ''),"
+            " bool(os.environ.get('PATH')),"
+            " bool(os.environ.get('SystemRoot') or os.environ.get('HOME')))"
+        )
+        result = run_command(
+            [sys.executable, "-c", probe],
+            cwd=Path.cwd(),
+            timeout=120,
+            env={"PASEVSU_PROBE": "added"},
+        )
+        self.assertTrue(result.ok, result.stderr)
+        self.assertEqual(result.stdout.split(), ["added", "True", "True"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -181,15 +181,36 @@ class ProtectedBranchTest(unittest.TestCase):
             first = publish(
                 config, version="0.1.0", paths=("a.txt",), summary="първи пуск"
             )
-            run_command([GIT, "switch", "master"], cwd=root, timeout=120)
             write_text(root, "b.txt", "y\n")
             second = publish(
                 config, version="0.1.1", paths=("b.txt",), summary="втори пуск"
+            )
+            branch = run_command(
+                [GIT, "rev-parse", "--abbrev-ref", "HEAD"], cwd=root, timeout=120
             )
         self.assertEqual(first.status, PUBLISHED, first.message)
         self.assertEqual(second.status, PUBLISHED, second.message)
         self.assertEqual(first.branch, "installer/0.1.0")
         self.assertEqual(second.branch, "installer/0.1.1")
+        self.assertEqual(branch.stdout.strip(), "installer/0.1.1")
+
+    def test_working_branch_is_left_alone(self) -> None:
+        with temp_root() as root:
+            _init_repo(root)
+            run_command([GIT, "switch", "-c", "feature/notes"], cwd=root, timeout=120)
+            write_text(root, "a.txt", "x\n")
+            outcome = publish(
+                _config(root, push=False),
+                version="0.1.0",
+                paths=("a.txt",),
+                summary="добавя инсталатор",
+            )
+            branch = run_command(
+                [GIT, "rev-parse", "--abbrev-ref", "HEAD"], cwd=root, timeout=120
+            )
+        self.assertEqual(outcome.status, PUBLISHED, outcome.message)
+        self.assertEqual(outcome.branch, "feature/notes")
+        self.assertEqual(branch.stdout.strip(), "feature/notes")
 
     def test_existing_branch_is_checked_out(self) -> None:
         with temp_root() as root:

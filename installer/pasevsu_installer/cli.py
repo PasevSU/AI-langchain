@@ -241,6 +241,10 @@ def _run_locked(  # noqa: PLR0913
         write_publication_record(config, publication)
         _print_publication(publication)
         if not publication.ok:
+            state["runs"] = int(state.get("runs", 0)) + 1
+            state["first_run_completed_at"] = (
+                state.get("first_run_completed_at") or utc_now()
+            )
             state = store.save(store.mark(state, "publish-failed"))
             _finalise(config, store, state, backup, selection_report, execution, tests, publication, version)
             return EXIT_FAILED

@@ -94,14 +94,9 @@ def publish(
 
     revision = gitops.revision(root)
     current = revision.get("branch") or ""
-    target_branch = current
-    if current in PROTECTED_BRANCHES or not current:
-        if config.allow_master:
-            target_branch = current or "master"
-        else:
-            target_branch = f"{config.commit_scope}/{version}"
-            if not dry_run:
-                _switch_branch(root, target_branch)
+    target_branch = _target_branch(config, current, version)
+    if not dry_run and target_branch != current:
+        _switch_branch(root, target_branch)
 
     message = commit_message(config, version=version, summary=summary, body=body)
     tag_name = f"{config.tag_prefix}{version}"
@@ -233,6 +228,25 @@ def _transient(result: Any) -> bool:
         "rpc failed",
     )
     return any(marker in text for marker in markers)
+
+
+def _target_branch(config: Config, current: str, version: str) -> str:
+    """Choose the branch a release belongs on.
+
+    A release branch is always ``<scope>/<version>``: publishing ``0.1.2`` must
+    never land on ``<scope>/0.1.1`` just because that is where the checkout
+    happens to stand. Protected branches stay in use only when the project
+    allows it, and any other working branch is left alone so the installer
+    never hijacks a developer's own branch.
+    """
+    scoped = f"{config.commit_scope}/{version}"
+    if not current:
+        return "master" if config.allow_master else scoped
+    if current in PROTECTED_BRANCHES:
+        return current if config.allow_master else scoped
+    if current.startswith(f"{config.commit_scope}/"):
+        return scoped
+    return current
 
 
 def _switch_branch(root: Path, branch: str) -> None:

@@ -113,10 +113,16 @@ def run_command(
 ) -> CompletedCommand:
     """Run ``argv`` in ``cwd`` and capture its output.
 
+    ``env`` is **merged** into the inherited environment instead of replacing
+    it. Dropping ``SystemRoot``/``windir`` on Windows makes the CRT unable to
+    create its resolver helper thread, so ``git push`` dies with
+    ``getaddrinfo() thread failed to start`` even though the network is fine.
+
     A timeout is reported as exit code ``124`` instead of raising so callers can
     treat it as an ordinary failed gate.
     """
     started = monotonic()
+    child_env = {**os.environ, **env} if env else None
     try:
         completed = subprocess.run(  # noqa: S603 - argv is always an explicit list
             list(argv),
@@ -127,7 +133,7 @@ def run_command(
             errors="replace",
             timeout=timeout,
             check=False,
-            env=env,
+            env=child_env,
         )
         return CompletedCommand(
             argv=tuple(argv),
