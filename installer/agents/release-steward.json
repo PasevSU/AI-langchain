@@ -1,0 +1,43 @@
+{
+  "schema": "pasevsu.installer.agent.v1",
+  "id": "release-steward",
+  "title": "Агент по изданието — синхрон на версията",
+  "status": "active",
+  "purpose": "Вдига версията на пакета на едно място и я записва едновременно във всички места, които я декларират (VERSION, pyproject.toml, __init__.py), после проверява чрез обратно четене, че те съвпадат. Така изданието вече не зависи от ръчна редакция на три файла и от това дали някой от тях е изостанал. Стойността 'version' в задачата е обявената версия за следващото издание — сменяйте я само когато започва ново издание; при повторно стартиране със същата стойност задачата е 'unchanged' и нищо не се променя.",
+  "scope": [
+    "installer/VERSION",
+    "installer/pyproject.toml",
+    "installer/pasevsu_installer/__init__.py",
+    "installer/RELEASE-NOTES/"
+  ],
+  "tasks": [
+    {
+      "id": "rs-bump-version",
+      "title": "Запиши обявената версия във всички места",
+      "declared": true,
+      "risk": "low",
+      "scope": [
+        "installer/VERSION",
+        "installer/pyproject.toml",
+        "installer/pasevsu_installer/__init__.py"
+      ],
+      "changes": [
+        {
+          "op": "bump_version",
+          "params": {
+            "version": "0.1.7"
+          },
+          "note": "Една декларирана версия се записва в трите места; файловете, които вече са на тази версия, се прескачат."
+        }
+      ],
+      "verify": [
+        {
+          "op": "assert_version",
+          "params": {
+            "version": "0.1.7"
+          }
+        }
+      ]
+    }
+  ]
+}

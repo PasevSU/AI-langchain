@@ -57,8 +57,9 @@ class TaskOutcome:
         """Every path this task touched or inspected."""
         seen: list[str] = []
         for item in (*self.changes, *self.verify):
-            if item.path and item.path not in seen:
-                seen.append(item.path)
+            for path in item.paths:
+                if path not in seen:
+                    seen.append(path)
         return tuple(seen)
 
     def to_dict(self) -> dict[str, Any]:

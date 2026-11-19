@@ -122,6 +122,7 @@ MUTATING_OPS = frozenset(
         "replace_once",
         "emit_selection_manifest",
         "copy_asset",
+        "bump_version",
     }
 )
 

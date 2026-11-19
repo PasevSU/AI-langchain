@@ -1,0 +1,66 @@
+{
+  "schema": "pasevsu.installer.agent.v1",
+  "id": "test-guardian",
+  "title": "Агент по качеството — проверки след миграция",
+  "status": "active",
+  "purpose": "Пази основата, върху която се публикува. Записва (само ако липсва) кратка бележка с точните команди на трите проверки — ruff, mypy, unit — за да не се разчита на памет, и след това проверява с операции само за четене, че версията съвпада във всички места и че тестовите пакети са декларирани в конфигурацията. Провалена проверка спира публикуването — това е нарочно.",
+  "scope": [
+    "installer/QUALITY.md",
+    "installer/VERSION",
+    "installer/pyproject.toml",
+    "installer/pasevsu_installer/__init__.py",
+    "installer/installer.config.json"
+  ],
+  "tasks": [
+    {
+      "id": "tg-quality-gates",
+      "title": "Запиши командите на проверките и провери основата на изданието",
+      "declared": true,
+      "risk": "low",
+      "scope": [
+        "installer/QUALITY.md",
+        "installer/VERSION",
+        "installer/pyproject.toml",
+        "installer/pasevsu_installer/__init__.py",
+        "installer/installer.config.json"
+      ],
+      "changes": [
+        {
+          "op": "write_file_if_absent",
+          "params": {
+            "path": "installer/QUALITY.md",
+            "content": "# Проверки преди издание\n\nТези три команди се пускат от корена на хранилището и трябва да минат, преди версията да бъде обявена за издадена. `make` не се използва — той не е наличен на всяка машина.\n\n```powershell\nuv run --no-project ruff check installer\nuv run --no-project mypy installer/pasevsu_installer\npython -m unittest discover -s installer/tests -t installer\n```\n\nОчакван резултат: `All checks passed!`, `Success: no issues found`, `OK`.\n\nПакетът `langchain-v1-unit` е незадължителен: част от тестовете му са само за POSIX и се провалят на Windows. Провалът му не блокира публикуването, но трябва да бъде отчетен в бележките към изданието.\n"
+          },
+          "note": "Създава бележката само при първо изпълнение; при повторно стартиране остава непроменена."
+        }
+      ],
+      "verify": [
+        {
+          "op": "assert_file_contains",
+          "params": {
+            "path": "installer/QUALITY.md",
+            "text": "ruff check installer"
+          }
+        },
+        {
+          "op": "assert_version",
+          "params": {},
+          "note": "Без очаквана стойност: първото място (VERSION) е еталон, останалите трябва да съвпадат с него."
+        },
+        {
+          "op": "assert_file_exists",
+          "params": {
+            "path": "installer/installer.config.json"
+          }
+        },
+        {
+          "op": "assert_file_contains",
+          "params": {
+            "path": "installer/installer.config.json",
+            "text": "test_suites"
+          }
+        }
+      ]
+    }
+  ]
+}

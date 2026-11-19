@@ -17,7 +17,7 @@ from pasevsu_installer.operations import (
     plan_change,
 )
 
-from .support import change, temp_root
+from .support import change, temp_root, write_text
 
 
 class ResolveTargetTest(unittest.TestCase):
@@ -253,6 +253,103 @@ class CopyAssetTest(unittest.TestCase):
             planned = plan_change(OpContext(root), payload)
             self.assertEqual(planned.status, PLANNED)
             self.assertFalse((root / "gui" / "app.css").exists())
+
+
+class BumpVersionTest(unittest.TestCase):
+    """One declared version is written to every version site at once."""
+
+    def _seed(self, root: Path, version: str = "0.1.6") -> None:
+        write_text(root, "installer/VERSION", f"{version}\n")
+        write_text(root, "installer/pyproject.toml", f'[project]\nname = "x"\nversion = "{version}"\n')
+        write_text(root, "installer/pasevsu_installer/__init__.py", f'__version__ = "{version}"\n')
+
+    def test_rewrites_all_sites(self) -> None:
+        with temp_root() as root:
+            self._seed(root)
+            result = apply_change(OpContext(root), change("bump_version", version="0.1.7"))
+            self.assertEqual(result.status, WRITE)
+            self.assertEqual(result.path, "installer/VERSION")
+            self.assertEqual(len(result.extra_paths), 2)
+            self.assertEqual((root / "installer" / "VERSION").read_text(encoding="utf-8"), "0.1.7\n")
+            toml = (root / "installer" / "pyproject.toml").read_text(encoding="utf-8")
+            self.assertIn('version = "0.1.7"', toml)
+            init = (root / "installer" / "pasevsu_installer" / "__init__.py").read_text(
+                encoding="utf-8"
+            )
+            self.assertLessEqual({'__version__ = "0.1.7"'}, set(init.splitlines()))
+
+    def test_second_run_is_unchanged(self) -> None:
+        with temp_root() as root:
+            self._seed(root)
+            ctx = OpContext(root)
+            apply_change(ctx, change("bump_version", version="0.1.7"))
+            again = apply_change(ctx, change("bump_version", version="0.1.7"))
+            self.assertEqual(again.status, UNCHANGED)
+            self.assertIn("0.1.7", again.detail)
+
+    def test_rejects_malformed_version(self) -> None:
+        with temp_root() as root:
+            self._seed(root)
+            with self.assertRaises(OperationError):
+                apply_change(OpContext(root), change("bump_version", version="1.2"))
+
+    def test_missing_site_is_an_error(self) -> None:
+        with temp_root() as root, self.assertRaises(OperationError):
+            apply_change(OpContext(root), change("bump_version", version="0.1.7"))
+
+    def test_custom_sites_are_honoured(self) -> None:
+        with temp_root() as root:
+            write_text(root, "pkg/__init__.py", '__version__ = "1.0.0"\n')
+            result = apply_change(
+                OpContext(root),
+                change("bump_version", version="1.1.0", sites=["pkg/__init__.py"]),
+            )
+            self.assertEqual(result.status, WRITE)
+            self.assertEqual(result.extra_paths, ())
+            self.assertIn('"1.1.0"', (root / "pkg" / "__init__.py").read_text(encoding="utf-8"))
+
+    def test_dry_run_plans_without_writing(self) -> None:
+        with temp_root() as root:
+            self._seed(root)
+            planned = plan_change(OpContext(root), change("bump_version", version="0.1.7"))
+            self.assertEqual(planned.status, PLANNED)
+            self.assertIn("0.1.7", planned.detail)
+            self.assertEqual((root / "installer" / "VERSION").read_text(encoding="utf-8"), "0.1.6\n")
+
+
+class AssertVersionTest(unittest.TestCase):
+    """Verification refuses a repository whose version sites disagree."""
+
+    def _seed(self, root: Path, version: str = "0.1.6") -> None:
+        write_text(root, "installer/VERSION", f"{version}\n")
+        write_text(root, "installer/pyproject.toml", f'[project]\nversion = "{version}"\n')
+        write_text(root, "installer/pasevsu_installer/__init__.py", f'__version__ = "{version}"\n')
+
+    def test_matching_sites_pass(self) -> None:
+        with temp_root() as root:
+            self._seed(root)
+            result = apply_change(OpContext(root), change("assert_version"))
+            self.assertEqual(result.status, UNCHANGED)
+            self.assertIn("0.1.6", result.detail)
+
+    def test_expected_version_is_checked(self) -> None:
+        with temp_root() as root:
+            self._seed(root)
+            result = apply_change(OpContext(root), change("assert_version", version="0.1.7"))
+            self.assertEqual(result.status, FAILED)
+            self.assertIn("0.1.6", result.detail)
+
+    def test_drift_is_reported(self) -> None:
+        with temp_root() as root:
+            self._seed(root)
+            write_text(root, "installer/pyproject.toml", '[project]\nversion = "0.1.5"\n')
+            result = apply_change(OpContext(root), change("assert_version"))
+            self.assertEqual(result.status, FAILED)
+            self.assertIn("installer/pyproject.toml=0.1.5", result.detail)
+
+    def test_missing_site_raises(self) -> None:
+        with temp_root() as root, self.assertRaises(OperationError):
+            apply_change(OpContext(root), change("assert_version"))
 
 
 class UnknownOpTest(unittest.TestCase):

@@ -8,6 +8,7 @@ repository root — traversal and absolute targets are rejected.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
@@ -22,7 +23,20 @@ UNCHANGED = "unchanged"
 FAILED = "failed"
 PLANNED = "planned"
 
-_READ_ONLY_OPS = frozenset({"assert_file_exists", "assert_file_contains", "assert_block_present"})
+_READ_ONLY_OPS = frozenset(
+    {"assert_file_exists", "assert_file_contains", "assert_block_present", "assert_version"}
+)
+
+#: Файловете, в които версията трябва да съвпада (подразбиране за операциите с версия).
+VERSION_SITES: tuple[str, ...] = (
+    "installer/VERSION",
+    "installer/pyproject.toml",
+    "installer/pasevsu_installer/__init__.py",
+)
+
+_VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
+_PY_VERSION_RE = re.compile(r'(?m)^(__version__\s*=\s*)"[^"]*"')
+_TOML_VERSION_RE = re.compile(r'(?m)^(version\s*=\s*)"[^"]*"')
 
 
 @dataclass(frozen=True)
@@ -35,17 +49,26 @@ class OpResult:
     detail: str = ""
     sha256_before: str | None = None
     sha256_after: str | None = None
+    #: Допълнителни файлове, които операцията е пипнала (напр. всички места за версия).
+    extra_paths: tuple[str, ...] = ()
 
     @property
     def ok(self) -> bool:
         """Whether the operation applied cleanly or was already satisfied."""
         return self.status in (WRITE, UNCHANGED, PLANNED)
 
+    @property
+    def paths(self) -> tuple[str, ...]:
+        """Every repository path this result refers to."""
+        return ((self.path,) if self.path else ()) + self.extra_paths
+
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serialisable representation."""
         payload: dict[str, Any] = {"op": self.op, "status": self.status, "detail": self.detail}
         if self.path is not None:
             payload["path"] = self.path
+        if self.extra_paths:
+            payload["extra_paths"] = list(self.extra_paths)
         if self.sha256_before is not None:
             payload["sha256_before"] = self.sha256_before
         if self.sha256_after is not None:
@@ -217,6 +240,103 @@ def emit_selection_manifest(ctx: OpContext, params: dict[str, Any]) -> OpResult:
 
 
 # --------------------------------------------------------------------------
+# version sites
+# --------------------------------------------------------------------------
+def _version_sites(ctx: OpContext, params: dict[str, Any]) -> tuple[Path, ...]:
+    """Return the files a version change must touch, in declaration order."""
+    raw = params.get("sites")
+    if raw is None:
+        return tuple(resolve_target(ctx.root, item) for item in VERSION_SITES)
+    if not isinstance(raw, list) or not raw:
+        raise OperationError("операцията изисква 'sites' да е непразен списък от пътища")
+    return tuple(resolve_target(ctx.root, item) for item in raw)
+
+
+def _version_pattern(target: Path) -> re.Pattern[str] | None:
+    """Return the regex carrying the version, or ``None`` for a bare VERSION file."""
+    if target.name == "VERSION":
+        return None
+    if target.suffix == ".py":
+        return _PY_VERSION_RE
+    if target.suffix in {".toml", ".cfg"}:
+        return _TOML_VERSION_RE
+    raise OperationError(f"неподдържан файл за версия: {target.name}")
+
+
+def _current_version(target: Path) -> str:
+    """Read the version declared in one site, or raise ``OperationError``."""
+    if not target.is_file():
+        raise OperationError(f"липсва файл за версия: {target.name}")
+    text = read_text(target)
+    pattern = _version_pattern(target)
+    if pattern is None:
+        return text.strip()
+    match = pattern.search(text)
+    if match is None:
+        raise OperationError(f"в {target.name} липсва ред за версия")
+    return match.group(0).split('"', 2)[1]
+
+
+def _next_body(target: Path, version: str) -> str:
+    """Return the file body with the version replaced by ``version``."""
+    if not target.is_file():
+        raise OperationError(f"липсва файл за версия: {target.name}")
+    pattern = _version_pattern(target)
+    if pattern is None:
+        return version + "\n"
+    text = read_text(target)
+    if pattern.search(text) is None:
+        raise OperationError(f"в {target.name} липсва ред за версия")
+    return pattern.sub(lambda match: f'{match.group(1)}"{version}"', text, count=1)
+
+
+def _planned_version_changes(
+    ctx: OpContext, params: dict[str, Any]
+) -> tuple[tuple[Path, ...], tuple[str, ...], str]:
+    """Validate a version request and list the sites that would actually change."""
+    version = _require_str(params, "version")
+    if not _VERSION_RE.match(version):
+        raise OperationError(f"версията {version!r} не е от вида X.Y.Z")
+    sites = _version_sites(ctx, params)
+    pending: list[str] = []
+    for target in sites:
+        if not target.is_file():
+            raise OperationError(f"липсва файл за версия: {target.name}")
+        if read_text(target) != _next_body(target, version):
+            pending.append(_relative(ctx.root, target))
+    return sites, tuple(pending), version
+
+
+def bump_version(ctx: OpContext, params: dict[str, Any]) -> OpResult:
+    """Write one version string to every declared version site at once."""
+    sites, pending, version = _planned_version_changes(ctx, params)
+    first = _relative(ctx.root, sites[0])
+    if not pending:
+        return OpResult("bump_version", UNCHANGED, first, f"версията вече е {version}")
+    before = sha256_file(resolve_target(ctx.root, pending[0]))
+    after = ""
+    for index, rel in enumerate(pending):
+        target = resolve_target(ctx.root, rel)
+        body = _next_body(target, version)
+        target.write_text(body, encoding="utf-8", newline="\n")
+        if index == 0:
+            after = sha256_text(body)
+    skipped = len(sites) - len(pending)
+    detail = f"версия {version} в {len(pending)} файла"
+    if skipped:
+        detail += f" ({skipped} без промяна)"
+    return OpResult(
+        "bump_version",
+        WRITE,
+        pending[0],
+        detail,
+        sha256_before=before,
+        sha256_after=after,
+        extra_paths=tuple(pending[1:]),
+    )
+
+
+# --------------------------------------------------------------------------
 # bundled assets
 # --------------------------------------------------------------------------
 def _asset_source(params: dict[str, Any]) -> Path:
@@ -289,16 +409,41 @@ def assert_block_present(ctx: OpContext, params: dict[str, Any]) -> OpResult:
     )
 
 
+def assert_version(ctx: OpContext, params: dict[str, Any]) -> OpResult:
+    """Verify that every version site agrees, optionally with an expected value."""
+    expected = params.get("version")
+    if expected is not None and (not isinstance(expected, str) or not expected.strip()):
+        raise OperationError("assert_version: 'version' трябва да е непразен низ")
+    sites = _version_sites(ctx, params)
+    found = [(_relative(ctx.root, target), _current_version(target)) for target in sites]
+    first = found[0][0]
+    wanted = expected.strip() if isinstance(expected, str) else found[0][1]
+    if not _VERSION_RE.match(wanted):
+        return OpResult("assert_version", FAILED, first, f"невалидна версия {wanted!r}")
+    mismatched = [f"{rel}={value}" for rel, value in found if value != wanted]
+    if not mismatched:
+        return OpResult("assert_version", UNCHANGED, first, f"версията е {wanted} навсякъде")
+    return OpResult(
+        "assert_version",
+        FAILED,
+        first,
+        f"очаква се {wanted}, а е: {', '.join(mismatched)}",
+        extra_paths=tuple(rel for rel, _value in found[1:]),
+    )
+
+
 OPERATIONS: dict[str, Callable[[OpContext, dict[str, Any]], OpResult]] = {
     "write_file_if_absent": write_file_if_absent,
     "write_file": write_file,
     "append_block_if_absent": append_block_if_absent,
     "replace_once": replace_once,
     "emit_selection_manifest": emit_selection_manifest,
+    "bump_version": bump_version,
     "copy_asset": copy_asset,
     "assert_file_exists": assert_file_exists,
     "assert_file_contains": assert_file_contains,
     "assert_block_present": assert_block_present,
+    "assert_version": assert_version,
 }
 
 KNOWN_OPS = frozenset(OPERATIONS)
@@ -306,6 +451,8 @@ KNOWN_OPS = frozenset(OPERATIONS)
 
 def describe(change: Change) -> str:
     """Return a one-line human description of a change (used by dry runs)."""
+    if change.op in {"bump_version", "assert_version"}:
+        return f"{change.op} → версия {change.params.get('version', '?')}"
     path = change.params.get("path", "?")
     return f"{change.op} → {path}"
 
@@ -324,6 +471,18 @@ def plan_change(ctx: OpContext, change: Change) -> OpResult:
         return apply_change(ctx, change)
     if change.op not in OPERATIONS:
         raise OperationError(f"непозната операция: {change.op}")
+    if change.op == "bump_version":
+        sites, pending, version = _planned_version_changes(ctx, change.params)
+        first = _relative(ctx.root, sites[0])
+        if not pending:
+            return OpResult("bump_version", UNCHANGED, first, f"версията вече е {version}")
+        return OpResult(
+            "bump_version",
+            PLANNED,
+            pending[0],
+            f"версия {version} ще се запише в {len(pending)} файла: {', '.join(pending)}",
+            extra_paths=tuple(pending[1:]),
+        )
     target = resolve_target(ctx.root, change.params.get("path"))
     rel = _relative(ctx.root, target)
     exists = target.exists()

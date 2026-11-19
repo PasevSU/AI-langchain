@@ -327,6 +327,14 @@ def _run_locked(
         _record(None, None)
         return EXIT_FAILED
 
+    released = config.read_version()
+    if released != version:
+        journal.append("version-bumped", before=version, after=released)
+        _out(f"Версия: {version} → {released} (обявена от задача в тази миграция)")
+        version = released
+        state["version"] = version
+        state = store.save(state)
+
     tests: TestReport | None = None
     if run_tests and not dry_run:
         state = store.save(store.mark(state, "tests"))
