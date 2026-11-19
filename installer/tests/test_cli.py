@@ -19,8 +19,10 @@ from pathlib import Path
 from typing import Any
 
 from pasevsu_installer import cli
+from pasevsu_installer.config import load_config
+from pasevsu_installer.executor import ExecutionResult
 from pasevsu_installer.journal import Journal
-from pasevsu_installer.publisher import DIFF_NOTHING, diff_summary
+from pasevsu_installer.publisher import DIFF_NOTHING, SKIPPED, diff_summary
 from pasevsu_installer.state import LOCK_TTL_S, StateStore
 
 from .support import dump_json, temp_root, write_text
@@ -75,6 +77,38 @@ GUARD_ONLY: dict[str, Any] = {
     "scope": ["installer/VERSION"],
     "changes": [],
     "verify": [{"op": "assert_version", "params": {"version": "0.1.0"}}],
+}
+
+# Two independent declarations. ``--agents`` has to be able to pick exactly one
+# of them and to explain why the other one was left out.
+NOTE_ONE: dict[str, Any] = {
+    "id": "note-one",
+    "title": "Записва първа бележка",
+    "declared": True,
+    "risk": "low",
+    "scope": ["docs/"],
+    "changes": [
+        {
+            "op": "write_file_if_absent",
+            "params": {"path": "docs/one.md", "content": "едно\n"},
+        }
+    ],
+    "verify": [{"op": "assert_file_exists", "params": {"path": "docs/one.md"}}],
+}
+
+NOTE_TWO: dict[str, Any] = {
+    "id": "note-two",
+    "title": "Записва втора бележка",
+    "declared": True,
+    "risk": "low",
+    "scope": ["docs/"],
+    "changes": [
+        {
+            "op": "write_file_if_absent",
+            "params": {"path": "docs/two.md", "content": "две\n"},
+        }
+    ],
+    "verify": [{"op": "assert_file_exists", "params": {"path": "docs/two.md"}}],
 }
 
 
@@ -235,6 +269,48 @@ class InstallTest(unittest.TestCase):
             self.assertIn("Няма заявени промени за прилагане", text)
             self.assertEqual(StateStore(root).load()["runs"], 1)
 
+    def test_forced_rerun_without_changes_stays_a_noop(self) -> None:
+        """A forced re-run must not rewrite the notes, the tag or the history.
+
+        Regression: ``--force`` used to lift the no-op gate as well, so a re-run
+        with zero real changes still regenerated ``RELEASE-NOTES/<version>.md``
+        (its body embeds the run fingerprint), committed it and pushed it while
+        the annotated tag stayed on the previous commit.
+        """
+        with temp_root() as root:
+            project(root)
+            agent(root, GUARD_ONLY)
+
+            run_cli(root, "install")
+
+            code, text = run_cli(root, "install", "--force")
+
+            self.assertEqual(code, cli.EXIT_OK, msg=text)
+            self.assertIn("Задачите са проверени, но нищо не е променено", text)
+            self.assertFalse((root / "installer" / "RELEASE-NOTES").exists())
+            state = StateStore(root).load()
+            self.assertEqual(state["phase"], "noop")
+            phases = [entry["phase"] for entry in state["history"]]
+            self.assertEqual(phases, ["noop", "noop"])
+
+
+    def test_publication_is_skipped_without_substantive_paths(self) -> None:
+        """The generated note alone must never justify a release."""
+        with temp_root() as root:
+            project(root)
+            journal = Journal(StateStore(root).artifacts("journal.jsonl"))
+
+            publication = cli._publish(
+                load_config(root),
+                journal,
+                ExecutionResult(),
+                "0.1.0",
+                dry_run=False,
+            )
+
+            self.assertEqual(publication.status, SKIPPED)
+            self.assertFalse((root / "installer" / "RELEASE-NOTES").exists())
+
     def test_missing_configuration_is_a_config_error(self) -> None:
         with temp_root() as root:
             code, text = run_cli(root, "install")
@@ -290,6 +366,98 @@ class InstallTest(unittest.TestCase):
             self.assertIn("docs/note.md", entry["paths"])
 
 
+class AgentsFilterTest(unittest.TestCase):
+    """``--agents`` narrows the run without hiding what it left out.
+
+    The registry decides which agents exist; this filter only decides which of
+    the known ones may run now. Every agent it drops has to say so, in the CLI
+    output and in the report, so an operator never wonders why a task was quiet.
+    """
+
+    def two_agents(self, root: Path) -> None:
+        """Lay out a project with two independent, fully declared agents."""
+        project(root)
+        agent(root, NOTE_ONE, agent_id="agent-one")
+        agent(root, NOTE_TWO, agent_id="agent-two")
+
+    def test_named_agent_is_the_only_one_applied(self) -> None:
+        with temp_root() as root:
+            self.two_agents(root)
+
+            code, text = run_cli(root, "install", "--agents", "agent-two")
+
+            self.assertEqual(code, cli.EXIT_OK, msg=text)
+            self.assertTrue((root / "docs" / "two.md").is_file())
+            self.assertFalse((root / "docs" / "one.md").exists())
+
+    def test_excluded_agent_carries_a_readable_reason(self) -> None:
+        with temp_root() as root:
+            self.two_agents(root)
+
+            code, text = run_cli(root, "install", "--agents", "agent-two")
+
+            self.assertEqual(code, cli.EXIT_OK, msg=text)
+            self.assertIn("  + agent-two", text)
+            self.assertIn("- agent-one: не е поискан изрично (--agents)", text)
+            report = (root / ".installer" / "report.md").read_text(encoding="utf-8")
+            self.assertIn("`agent-one` — не е поискан изрично (--agents)", report)
+
+    def test_comma_separated_agents_are_all_selected(self) -> None:
+        with temp_root() as root:
+            self.two_agents(root)
+
+            code, text = run_cli(root, "install", "--agents", "agent-one,agent-two")
+
+            self.assertEqual(code, cli.EXIT_OK, msg=text)
+            payload = (root / ".installer" / "selection.json").read_text(encoding="utf-8")
+            self.assertEqual(json.loads(payload)["agents"], ["agent-one", "agent-two"])
+            self.assertTrue((root / "docs" / "one.md").is_file())
+            self.assertTrue((root / "docs" / "two.md").is_file())
+
+    def test_unknown_agent_fails_before_any_change(self) -> None:
+        with temp_root() as root:
+            self.two_agents(root)
+
+            code, text = run_cli(root, "install", "--agents", "ghost")
+
+            self.assertEqual(code, cli.EXIT_FAILED, msg=text)
+            self.assertIn("грешка [registry-invalid]", text)
+            self.assertIn("ghost", text)
+            self.assertFalse((root / "docs").exists())
+
+    def test_dry_run_forecasts_the_filtered_set(self) -> None:
+        with temp_root() as root:
+            self.two_agents(root)
+
+            code, text = run_cli(root, "install", "--agents", "agent-one", "--dry-run")
+
+            self.assertEqual(code, cli.EXIT_OK, msg=text)
+            self.assertIn("Избор (прогноза): 1 агента · 1 задачи", text)
+            self.assertFalse((root / "docs").exists())
+
+    def test_disabled_agent_is_reported_before_the_filter(self) -> None:
+        with temp_root() as root:
+            project(root)
+            agent(root, NOTE_ONE, agent_id="agent-one")
+            dump_json(
+                root,
+                "installer/agents/agent-paused.json",
+                {
+                    "schema": "pasevsu.installer.agent.v1",
+                    "id": "agent-paused",
+                    "title": "agent-paused",
+                    "status": "disabled",
+                    "tasks": [NOTE_TWO],
+                },
+            )
+
+            code, text = run_cli(root, "install", "--agents", "agent-one,agent-paused")
+
+            self.assertEqual(code, cli.EXIT_OK, msg=text)
+            self.assertIn("- agent-paused: status=disabled → изключен", text)
+            self.assertFalse((root / "docs" / "two.md").exists())
+
+
 class StatusAndResetTest(unittest.TestCase):
     """``--status`` reads and ``--reset`` deletes — both must be careful."""
 
@@ -343,7 +511,11 @@ class StatusAndResetTest(unittest.TestCase):
             agent(root, WRITER)
             run_cli(root, "install")
             store = StateStore(root)
-            holder = {"pid": 123456, "purpose": "migration", "at": "2026-01-01T00:00:00Z"}
+            holder = {
+                "pid": 123456,
+                "purpose": "migration",
+                "at": "2026-01-01T00:00:00Z",
+            }
             store.lock_path.write_text(json.dumps(holder), encoding="utf-8")
 
             code, text = run_cli(root, "--reset", "--force")
