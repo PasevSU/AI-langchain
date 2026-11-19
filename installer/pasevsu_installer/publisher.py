@@ -138,6 +138,8 @@ def publish(
             message=message,
         )
 
+    _verify_paths(root, files)
+
     staged = gitops.stage(root, files)
     if not staged.ok:
         raise PublishError(f"git add се провали: {_error_tail(staged)}")
@@ -243,6 +245,23 @@ def _normalise_paths(root: Path, paths: tuple[str, ...] | list[str]) -> list[str
     if not inside:
         inside = gitops.changed_paths(root)
     return [item for item in inside if not _is_state_path(item)]
+
+
+def _verify_paths(root: Path, files: list[str]) -> None:
+    """Refuse to publish a path that is neither tracked nor on disk.
+
+    ``git add`` is happy to fail late; failing early names every bad path in one
+    error instead of leaving a half-staged index behind. A path can legitimately
+    be missing from the working tree when another task deleted it, so a tracked
+    path always passes.
+    """
+    known = set(gitops.tracked_files(root))
+    unknown = [
+        item for item in files if item not in known and not (root / item).exists()
+    ]
+    if unknown:
+        listed = ", ".join(sorted(unknown))
+        raise PublishError(f"несъществуващи пътища за публикуване: {listed}")
 
 
 PUSH_ATTEMPTS = 3
