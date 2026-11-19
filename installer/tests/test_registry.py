@@ -46,14 +46,15 @@ class RealRegistryTest(unittest.TestCase):
         self.assertIn("installer-bootstrap", by_id)
         self.assertIn("installer-docs", by_id)
 
-    def test_every_shipped_task_is_declared_and_writes(self) -> None:
+    def test_every_shipped_task_is_declared_and_verified(self) -> None:
         for declaration in load_declarations(AGENTS_DIR):
             for task in declaration.tasks:
                 self.assertTrue(task.declared, msg=f"{task.id} не е declared")
-                self.assertTrue(
-                    task.changes or task.verify, msg=f"{task.id} не прави нищо"
-                )
                 self.assertTrue(task.verify, msg=f"{task.id} няма verify стъпка")
+                if not task.changes:
+                    self.assertTrue(
+                        task.scope, msg=f"{task.id}: пазач без обявен scope"
+                    )
 
     def test_disabled_agent_is_kept_visible(self) -> None:
         statuses = {item.id: item.status for item in load_declarations(AGENTS_DIR)}
