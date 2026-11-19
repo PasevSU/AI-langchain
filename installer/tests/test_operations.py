@@ -216,6 +216,45 @@ class AssertionsTest(unittest.TestCase):
             self.assertEqual(bad.status, FAILED)
 
 
+class CopyAssetTest(unittest.TestCase):
+    """Bundled assets (the dashboard) are copied, never read from outside."""
+
+    def test_copies_bundled_asset_then_reports_unchanged(self) -> None:
+        with temp_root() as root:
+            ctx = OpContext(root)
+            payload = change(
+                "copy_asset", asset="index.html", path="installer/gui/index.html"
+            )
+            first = apply_change(ctx, payload)
+            self.assertEqual(first.status, WRITE)
+            copied = (root / "installer" / "gui" / "index.html").read_text(encoding="utf-8")
+            self.assertIn("app.js", copied)
+            self.assertEqual(len(first.sha256_after or ""), 64)
+            self.assertEqual(apply_change(ctx, payload).status, UNCHANGED)
+
+    def test_missing_asset_fails(self) -> None:
+        with temp_root() as root:
+            result = apply_change(
+                OpContext(root), change("copy_asset", asset="nope.css", path="gui/nope.css")
+            )
+            self.assertEqual(result.status, FAILED)
+            self.assertIn("липсва", result.detail)
+
+    def test_asset_name_must_be_a_bare_name(self) -> None:
+        with temp_root() as root, self.assertRaises(OperationError):
+            apply_change(
+                OpContext(root),
+                change("copy_asset", asset="../cli.py", path="gui/cli.py"),
+            )
+
+    def test_dry_run_plans_without_copying(self) -> None:
+        with temp_root() as root:
+            payload = change("copy_asset", asset="app.css", path="gui/app.css")
+            planned = plan_change(OpContext(root), payload)
+            self.assertEqual(planned.status, PLANNED)
+            self.assertFalse((root / "gui" / "app.css").exists())
+
+
 class UnknownOpTest(unittest.TestCase):
     """The operation set is closed."""
 

@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="bg">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Инсталационен агент · табло за управление</title>
+    <link rel="stylesheet" href="app.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo" aria-hidden="true">◎</span>
+        <div>
+          <h1>Табло за управление на агентите</h1>
+          <p class="sub" id="subtitle">зареждане на данните…</p>
+        </div>
+      </div>
+      <div class="actions">
+        <span class="pill" id="source-pill">източник: —</span>
+        <button type="button" id="refresh" class="btn">Обнови</button>
+        <label class="btn file">
+          Зареди файл
+          <input type="file" id="file" accept="application/json,.json" hidden />
+        </label>
+      </div>
+    </header>
+
+    <div id="notice" class="notice" role="status" hidden></div>
+
+    <nav class="tabs" role="tablist">
+      <button
+        type="button"
+        role="tab"
+        class="tab is-active"
+        data-view="overview"
+      >
+        Обзор
+      </button>
+      <button type="button" role="tab" class="tab" data-view="agents">
+        Агенти
+      </button>
+      <button type="button" role="tab" class="tab" data-view="tasks">
+        Задачи
+      </button>
+      <button type="button" role="tab" class="tab" data-view="suites">
+        Тестове
+      </button>
+      <button type="button" role="tab" class="tab" data-view="publish">
+        Публикуване
+      </button>
+      <button type="button" role="tab" class="tab" data-view="journal">
+        Журнал
+      </button>
+      <button type="button" role="tab" class="tab" data-view="report">
+        Отчет
+      </button>
+    </nav>
+
+    <main>
+      <section id="view-overview" class="view is-active">
+        <div class="cards" id="stats"></div>
+        <div class="grid-2">
+          <article class="panel">
+            <h2>Път на изпълнение</h2>
+            <ol class="pipeline" id="pipeline"></ol>
+          </article>
+          <article class="panel">
+            <h2>Артефакти</h2>
+            <ul class="artefacts" id="artefacts"></ul>
+          </article>
+        </div>
+      </section>
+
+      <section id="view-agents" class="view">
+        <article class="panel">
+          <h2>Агенти и декларирани задачи</h2>
+          <p class="hint">
+            Изпълняват се само агенти, които имат ясно заявена промяна
+            (declared=true).
+          </p>
+          <div id="agents"></div>
+        </article>
+      </section>
+
+      <section id="view-tasks" class="view">
+        <article class="panel">
+          <h2>Състояние на задачите</h2>
+          <div id="tasks"></div>
+        </article>
+      </section>
+
+      <section id="view-suites" class="view">
+        <article class="panel">
+          <h2>Тестови пакети</h2>
+          <div id="suites"></div>
+        </article>
+      </section>
+
+      <section id="view-publish" class="view">
+        <article class="panel">
+          <h2>Публикуване</h2>
+          <div id="publish"></div>
+        </article>
+      </section>
+
+      <section id="view-journal" class="view">
+        <article class="panel">
+          <h2>Журнал (последни събития)</h2>
+          <div id="journal"></div>
+        </article>
+      </section>
+
+      <section id="view-report" class="view">
+        <article class="panel">
+          <h2>Отчет на последния пуск</h2>
+          <pre id="report" class="report"></pre>
+        </article>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <span
+        >pasevsu-installer-agent · локално табло без външни зависимости</span
+      >
+      <span id="generated"></span>
+    </footer>
+  </body>
+</html>

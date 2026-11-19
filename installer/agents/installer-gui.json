@@ -1,0 +1,115 @@
+{
+  "schema": "pasevsu.installer.agent.v1",
+  "id": "installer-gui",
+  "title": "Инсталационен агент — табло за управление",
+  "status": "active",
+  "purpose": "Изгражда таблото за управление на агентите (HTML/CSS/JS) от вградените активи на пакета, така че GUI-то да се появява при миграция, а не да се поддържа на ръка.",
+  "scope": [
+    "installer/gui/",
+    ".installer/"
+  ],
+  "tasks": [
+    {
+      "id": "gui-index",
+      "title": "Изгради началната страница на таблото",
+      "declared": true,
+      "risk": "low",
+      "scope": [
+        "installer/gui/index.html"
+      ],
+      "changes": [
+        {
+          "op": "copy_asset",
+          "params": {
+            "asset": "index.html",
+            "path": "installer/gui/index.html"
+          },
+          "note": "Копира вградения актив; при повторно стартиране файлът е идентичен и остава непроменен."
+        }
+      ],
+      "verify": [
+        {
+          "op": "assert_file_exists",
+          "params": {
+            "path": "installer/gui/index.html"
+          }
+        },
+        {
+          "op": "assert_file_contains",
+          "params": {
+            "path": "installer/gui/index.html",
+            "text": "app.js"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gui-styles",
+      "title": "Изгради стиловете на таблото",
+      "declared": true,
+      "risk": "low",
+      "scope": [
+        "installer/gui/app.css"
+      ],
+      "changes": [
+        {
+          "op": "copy_asset",
+          "params": {
+            "asset": "app.css",
+            "path": "installer/gui/app.css"
+          },
+          "note": "Копира вградения актив; при повторно стартиране файлът е идентичен и остава непроменен."
+        }
+      ],
+      "verify": [
+        {
+          "op": "assert_file_exists",
+          "params": {
+            "path": "installer/gui/app.css"
+          }
+        },
+        {
+          "op": "assert_file_contains",
+          "params": {
+            "path": "installer/gui/app.css",
+            "text": "--accent"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gui-script",
+      "title": "Изгради логиката на таблото",
+      "declared": true,
+      "risk": "low",
+      "scope": [
+        "installer/gui/app.js"
+      ],
+      "changes": [
+        {
+          "op": "copy_asset",
+          "params": {
+            "asset": "app.js",
+            "path": "installer/gui/app.js"
+          },
+          "note": "Копира вградения актив; при повторно стартиране файлът е идентичен и остава непроменен."
+        }
+      ],
+      "verify": [
+        {
+          "op": "assert_file_exists",
+          "params": {
+            "path": "installer/gui/app.js"
+          }
+        },
+        {
+          "op": "assert_file_contains",
+          "params": {
+            "path": "installer/gui/app.js",
+            "text": "snapshot.json"
+          }
+        }
+      ]
+    }
+  ]
+}

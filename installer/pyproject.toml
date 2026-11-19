@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pasevsu-installer"
-version = "0.1.5"
+version = "0.1.6"
 description = "First-run migration agent for this LangChain fork (stdlib only, no dependencies)."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -13,6 +13,8 @@ dependencies = []
 
 [tool.hatch.build.targets.wheel]
 packages = ["pasevsu_installer"]
+# Вградените активи на таблото (pasevsu_installer/assets/gui/*) влизат в пакета
+# автоматично: hatchling включва всички файлове под изброените пакети.
 
 # ---------------------------------------------------------------------------
 # lint / types

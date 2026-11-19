@@ -14,6 +14,11 @@ Verbs and flags:
     Remove the installer state so the next run is a first run again.
 ``--agents a,b``
     Restrict the run to explicitly named agents.
+``gui``
+    Build the agent dashboard: write ``.installer/gui`` (assets + ``snapshot.json``)
+    from the live state and optionally serve it locally.
+``--serve`` / ``--port`` / ``--open``
+    Serve the dashboard over HTTP on ``127.0.0.1`` and optionally open a browser.
 """
 
 from __future__ import annotations
@@ -30,6 +35,7 @@ from .errors import ConfigError, InstallerError, RegistryError
 from .executor import ExecutionResult, execute, merge_state_tasks
 from .executor import summarise as summarise_execution
 from .gitops import changed_paths, is_repository, revision
+from .gui import DEFAULT_PORT, GUI_DIRNAME, asset_names, build_snapshot, serve, write_gui
 from .journal import Journal
 from .publisher import Publication, publish, write_publication_record, write_release_notes
 from .registry import load_declarations
@@ -38,7 +44,7 @@ from .selection import SelectionReport, report, select
 from .state import StateStore
 from .tests_runner import TestReport, blockers, run_suites
 from .tests_runner import summarise as summarise_tests
-from .util import atomic_write_text, dump_json, utc_now
+from .util import UI_ASSETS_DIR, atomic_write_text, dump_json, utc_now
 
 EXIT_OK = 0
 EXIT_FAILED = 1
@@ -61,7 +67,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Инсталационен агент: миграция с бекъп, тестове и публикуване.",
     )
     parser.add_argument(
-        "verb", nargs="?", default="install", choices=("install", "status", "reset")
+        "verb", nargs="?", default="install", choices=("install", "status", "reset", "gui")
     )
     parser.add_argument(
         "--root", default=".", help="корен на хранилището (по подразбиране текущата папка)"
@@ -82,6 +88,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--status", action="store_true", help="съкратено за командата status")
     parser.add_argument("--reset", action="store_true", help="съкратено за командата reset")
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=DEFAULT_PORT,
+        help=f"порт за таблото (по подразбиране {DEFAULT_PORT})",
+    )
+    parser.add_argument(
+        "--serve", action="store_true", help="стартирай локален сървър за таблото"
+    )
+    parser.add_argument(
+        "--open",
+        dest="open_browser",
+        action="store_true",
+        help="отвори таблото в браузър (изисква --serve)",
+    )
     return parser
 
 
@@ -102,6 +123,13 @@ def run(argv: Sequence[str] | None = None) -> int:
         return _status(config)
     if args.verb == "reset":
         return _reset(config, force=args.force)
+    if args.verb == "gui":
+        return _gui(
+            config,
+            port=args.port,
+            do_serve=args.serve,
+            open_browser=args.open_browser,
+        )
     return _install(
         config,
         agents=_split_agents(args.agents),
@@ -110,6 +138,58 @@ def run(argv: Sequence[str] | None = None) -> int:
         do_publish=not args.no_publish,
         force=args.force,
     )
+
+
+def _gui(
+    config: Config,
+    *,
+    port: int,
+    do_serve: bool,
+    open_browser: bool,
+) -> int:
+    """Build the agent dashboard and optionally serve it locally."""
+    assets = asset_names()
+    if not assets:
+        _err(f"табло: липсват вградени активи в {UI_ASSETS_DIR}")
+        return EXIT_FAILED
+    store = StateStore(config.root, config.state_dir)
+    store.ensure()
+    try:
+        written = write_gui(config, store.artifacts(GUI_DIRNAME))
+    except FileNotFoundError as exc:
+        _err(f"табло: {exc}")
+        return EXIT_FAILED
+    snapshot = build_snapshot(config)
+    _out(
+        "Табло: "
+        f"{len(snapshot['agents'])} агента · "
+        f"{len(snapshot['tasks'])} задачи · "
+        f"{len(snapshot['suites'])} тестови пакета"
+    )
+    _out(f"Файлове: {len(written)} · {written[0].parent}")
+    _out(f"Данни: {written[-1]}")
+    _out(f"Активи: {', '.join(assets)}")
+    if "registry_error" in snapshot:
+        _err(f"табло: декларации: {snapshot['registry_error']}")
+    published = config.root / config.commit_scope / GUI_DIRNAME
+    if published.is_dir():
+        _out(f"Публикувано копие: {published}")
+    else:
+        _out("Публикувано копие: няма (ще се създаде при следващата миграция).")
+    if not do_serve:
+        _out("Съвет: python -m pasevsu_installer gui --serve (за табло в браузър).")
+        return EXIT_OK
+    try:
+        serve(
+            config,
+            port=port,
+            announce=lambda url: _out(f"Адрес: {url}"),
+            open_browser=open_browser,
+        )
+    except OSError as exc:
+        _err(f"табло: сървърът не стартира на порт {port}: {exc}")
+        return EXIT_FAILED
+    return EXIT_OK
 
 
 def _install(

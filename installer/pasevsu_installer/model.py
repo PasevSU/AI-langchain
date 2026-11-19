@@ -121,6 +121,7 @@ MUTATING_OPS = frozenset(
         "append_block_if_absent",
         "replace_once",
         "emit_selection_manifest",
+        "copy_asset",
     }
 )
 

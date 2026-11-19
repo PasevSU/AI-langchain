@@ -19,6 +19,11 @@ from typing import Any
 
 DEFAULT_TIMEOUT_S = 900
 
+#: Директорията на пакета — нужна, за да намираме вградените активи (GUI).
+PACKAGE_DIR = Path(__file__).resolve().parent
+#: Статичните активи на таблото за управление (публикуват се в `installer/gui`).
+UI_ASSETS_DIR = PACKAGE_DIR / "assets" / "gui"
+
 
 def utc_now() -> str:
     """Return the current UTC timestamp in ISO-8601 (``Z`` suffix) form."""

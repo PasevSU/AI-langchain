@@ -15,7 +15,7 @@ from typing import Any
 
 from .errors import OperationError
 from .model import Change
-from .util import dump_json, read_text, sha256_file, sha256_text
+from .util import UI_ASSETS_DIR, dump_json, read_text, sha256_file, sha256_text
 
 WRITE = "applied"
 UNCHANGED = "unchanged"
@@ -217,6 +217,40 @@ def emit_selection_manifest(ctx: OpContext, params: dict[str, Any]) -> OpResult:
 
 
 # --------------------------------------------------------------------------
+# bundled assets
+# --------------------------------------------------------------------------
+def _asset_source(params: dict[str, Any]) -> Path:
+    """Return the bundled asset a ``copy_asset`` change refers to."""
+    name = _require_str(params, "asset")
+    if PurePosixPath(name.replace("\\", "/")).name != name:
+        raise OperationError(f"{name!r} не е име на вграден актив (очаква се само име)")
+    return UI_ASSETS_DIR / name
+
+
+def copy_asset(ctx: OpContext, params: dict[str, Any]) -> OpResult:
+    """Copy a bundled package asset (GUI static files) into the repository."""
+    target = resolve_target(ctx.root, params.get("path"))
+    rel = _relative(ctx.root, target)
+    source = _asset_source(params)
+    if not source.is_file():
+        return OpResult("copy_asset", FAILED, rel, f"вграденият актив липсва: {source.name}")
+    body = _normalise_body(read_text(source))
+    before = sha256_file(target) if target.exists() else None
+    if before == sha256_text(body):
+        return OpResult("copy_asset", UNCHANGED, rel, "файлът е идентичен")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(body, encoding="utf-8", newline="\n")
+    return OpResult(
+        "copy_asset",
+        WRITE,
+        rel,
+        f"копиран от {source.name}",
+        sha256_before=before,
+        sha256_after=sha256_text(body),
+    )
+
+
+# --------------------------------------------------------------------------
 # read-only assertions (verification phase)
 # --------------------------------------------------------------------------
 def assert_file_exists(ctx: OpContext, params: dict[str, Any]) -> OpResult:
@@ -261,6 +295,7 @@ OPERATIONS: dict[str, Callable[[OpContext, dict[str, Any]], OpResult]] = {
     "append_block_if_absent": append_block_if_absent,
     "replace_once": replace_once,
     "emit_selection_manifest": emit_selection_manifest,
+    "copy_asset": copy_asset,
     "assert_file_exists": assert_file_exists,
     "assert_file_contains": assert_file_contains,
     "assert_block_present": assert_block_present,
@@ -323,4 +358,12 @@ def plan_change(ctx: OpContext, change: Change) -> OpResult:
                 f"фрагментът се среща {occurrences} пъти (нееднозначно)",
             )
         return OpResult(change.op, PLANNED, rel, "фрагментът ще бъде заменен")
+    if change.op == "copy_asset":
+        source = _asset_source(change.params)
+        if not source.is_file():
+            return OpResult(change.op, FAILED, rel, f"вграденият актив липсва: {source.name}")
+        body = _normalise_body(read_text(source))
+        if exists and sha256_file(target) == sha256_text(body):
+            return OpResult(change.op, UNCHANGED, rel, "файлът е идентичен")
+        return OpResult(change.op, PLANNED, rel, "активът ще бъде копиран")
     return OpResult(change.op, PLANNED, rel, "промяната ще бъде приложена")

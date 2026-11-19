@@ -27,6 +27,7 @@ from .errors import (
     StateError,
 )
 from .executor import ExecutionResult, TaskOutcome, execute
+from .gui import build_snapshot, write_gui, write_snapshot
 from .journal import Journal
 from .model import AgentDeclaration, Change, Task
 from .publisher import Publication, publish
@@ -35,7 +36,7 @@ from .selection import Selection, SelectionReport, select
 from .state import StateStore
 from .tests_runner import SuiteOutcome, TestReport, advisories, blockers, run_suites
 
-__version__ = "0.1.5"
+__version__ = "0.1.6"
 
 __all__ = [
     "AgentDeclaration",
@@ -64,6 +65,7 @@ __all__ = [
     "__version__",
     "advisories",
     "blockers",
+    "build_snapshot",
     "create_backup",
     "execute",
     "load_config",
@@ -75,4 +77,6 @@ __all__ = [
     "run_suites",
     "select",
     "verify_backup",
+    "write_gui",
+    "write_snapshot",
 ]

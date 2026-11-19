@@ -57,6 +57,29 @@
       "timeout_s": 900
     },
     {
+      "id": "installer-gui",
+      "description": "Табло за управление: snapshot от живите артефакти и генериране на GUI файловете.",
+      "command": [
+        "python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "installer/tests",
+        "-t",
+        "installer",
+        "-p",
+        "test_gui.py"
+      ],
+      "cwd": ".",
+      "required": true,
+      "requires": [
+        "python"
+      ],
+      "skip_reason": "липсва python в PATH",
+      "timeout_s": 300
+    },
+    {
       "id": "langchain-v1-sync",
       "description": "Синхронизира зависимостите на langchain v1 с uv lock файла.",
       "command": [
