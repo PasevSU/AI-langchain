@@ -14,8 +14,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
-from typing import Any
 from time import monotonic
+from typing import Any
 
 DEFAULT_TIMEOUT_S = 900
 
@@ -64,7 +64,7 @@ def atomic_write_text(path: Path, text: str) -> None:
     try:
         with handle:
             handle.write(text)
-        os.replace(handle.name, path)
+        Path(handle.name).replace(path)
     except BaseException:
         Path(handle.name).unlink(missing_ok=True)
         raise

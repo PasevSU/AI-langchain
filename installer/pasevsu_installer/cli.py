@@ -20,20 +20,24 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 from .backup import Backup, create_backup
 from .config import DEFAULT_CONFIG_REL, Config, load_config
 from .errors import ConfigError, InstallerError, RegistryError
-from .executor import ExecutionResult, execute, merge_state_tasks, summarise as summarise_execution
+from .executor import ExecutionResult, execute, merge_state_tasks
+from .executor import summarise as summarise_execution
 from .gitops import changed_paths, is_repository, revision
 from .journal import Journal
 from .publisher import Publication, publish, write_publication_record, write_release_notes
-from .registry import load_declarations, summarise as summarise_registry
+from .registry import load_declarations
+from .registry import summarise as summarise_registry
 from .selection import SelectionReport, report, select
 from .state import StateStore
-from .tests_runner import TestReport, blockers, run_suites, summarise as summarise_tests
+from .tests_runner import TestReport, blockers, run_suites
+from .tests_runner import summarise as summarise_tests
 from .util import atomic_write_text, dump_json, utc_now
 
 EXIT_OK = 0
@@ -56,14 +60,26 @@ def build_parser() -> argparse.ArgumentParser:
         prog="pasevsu-installer",
         description="Инсталационен агент: миграция с бекъп, тестове и публикуване.",
     )
-    parser.add_argument("verb", nargs="?", default="install", choices=("install", "status", "reset"))
-    parser.add_argument("--root", default=".", help="корен на хранилището (по подразбиране текущата папка)")
-    parser.add_argument("--config", default=None, help=f"път до конфигурацията (по подразбиране {DEFAULT_CONFIG_REL})")
+    parser.add_argument(
+        "verb", nargs="?", default="install", choices=("install", "status", "reset")
+    )
+    parser.add_argument(
+        "--root", default=".", help="корен на хранилището (по подразбиране текущата папка)"
+    )
+    parser.add_argument(
+        "--config",
+        default=None,
+        help=f"път до конфигурацията (по подразбиране {DEFAULT_CONFIG_REL})",
+    )
     parser.add_argument("--agents", default="", help="списък агенти през запетая")
     parser.add_argument("--dry-run", action="store_true", help="само прогноза, без промени")
     parser.add_argument("--no-tests", action="store_true", help="пропусни тестовите пакети")
     parser.add_argument("--no-publish", action="store_true", help="без commit/tag/push")
-    parser.add_argument("--force", action="store_true", help="изпълни дори при вече завършен първи пуск")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="изпълни дори при вече завършен първи пуск",
+    )
     parser.add_argument("--status", action="store_true", help="съкратено за командата status")
     parser.add_argument("--reset", action="store_true", help="съкратено за командата reset")
     return parser
@@ -127,7 +143,7 @@ def _install(
         return EXIT_LOCKED if exc.code == "state-locked" else EXIT_FAILED
 
 
-def _run_locked(  # noqa: PLR0913
+def _run_locked(
     config: Config,
     store: StateStore,
     journal: Journal,
@@ -211,9 +227,24 @@ def _run_locked(  # noqa: PLR0913
     state["plan_fingerprint"] = selection.fingerprint
     state = store.save(state)
     _print_execution(execution)
+
+    def _record(tests: TestReport | None, publication: Publication | None) -> None:
+        """Write the run report for the current state of this run."""
+        _finalise(
+            config,
+            store,
+            state,
+            backup=backup,
+            selection_report=selection_report,
+            execution=execution,
+            tests=tests,
+            publication=publication,
+            version=version,
+        )
+
     if not execution.ok:
         state = store.save(store.mark(state, "apply-failed", stopped_at=execution.stopped_at))
-        _finalise(config, store, state, backup, selection_report, execution, None, None, version)
+        _record(None, None)
         return EXIT_FAILED
 
     tests: TestReport | None = None
@@ -227,7 +258,7 @@ def _run_locked(  # noqa: PLR0913
             state = store.save(
                 store.mark(state, "tests-failed", blocking=list(blockers(tests)))
             )
-            _finalise(config, store, state, backup, selection_report, execution, tests, None, version)
+            _record(tests, None)
             return EXIT_FAILED
         for suite in tests.advisory:
             _out(
@@ -235,7 +266,9 @@ def _run_locked(  # noqa: PLR0913
                 "не блокира публикуването (виж отчета)"
             )
 
-    publication = _publish(config, store, journal, execution, version, dry_run=dry_run) if do_publish else None
+    publication = (
+        _publish(config, journal, execution, version, dry_run=dry_run) if do_publish else None
+    )
     if publication is not None:
         state["publish"] = publication.to_dict()
         write_publication_record(config, publication)
@@ -246,26 +279,25 @@ def _run_locked(  # noqa: PLR0913
                 state.get("first_run_completed_at") or utc_now()
             )
             state = store.save(store.mark(state, "publish-failed"))
-            _finalise(config, store, state, backup, selection_report, execution, tests, publication, version)
+            _record(tests, publication)
             return EXIT_FAILED
 
     if dry_run:
         state = store.save(store.mark(state, "planned"))
-        _finalise(config, store, state, backup, selection_report, execution, tests, publication, version)
+        _record(tests, publication)
         _out("Пробен пуск: нищо не е променено.")
         return EXIT_OK
 
     state["runs"] = int(state.get("runs", 0)) + 1
     state["first_run_completed_at"] = state.get("first_run_completed_at") or utc_now()
     state = store.mark(state, "done", plan_fingerprint=selection.fingerprint)
-    _finalise(config, store, state, backup, selection_report, execution, tests, publication, version)
+    _record(tests, publication)
     _out("Готово: миграцията приключи.")
     return EXIT_OK
 
 
 def _publish(
     config: Config,
-    store: StateStore,
     journal: Journal,
     execution: ExecutionResult,
     version: str,
@@ -328,8 +360,10 @@ def _release_body(execution: ExecutionResult, config: Config) -> str:
     changed = len(execution.applied)
     total = len(execution.outcomes)
     lines = [
-        f"Инсталационен агент `{config.name}` провери {total} задачи "
-        f"и промени {changed}.",
+        (
+            f"Инсталационен агент `{config.name}` провери {total} задачи "
+            f"и промени {changed}."
+        ),
         "",
     ]
     for outcome in execution.outcomes:
@@ -340,10 +374,11 @@ def _release_body(execution: ExecutionResult, config: Config) -> str:
     return "\n".join(lines)
 
 
-def _finalise(  # noqa: PLR0913
+def _finalise(
     config: Config,
     store: StateStore,
     state: dict[str, Any],
+    *,
     backup: Backup,
     selection_report: SelectionReport,
     execution: ExecutionResult,
@@ -354,7 +389,16 @@ def _finalise(  # noqa: PLR0913
     report_path = store.artifacts("report.md")
     atomic_write_text(
         report_path,
-        _report_markdown(config, state, backup, selection_report, execution, tests, publication, version),
+        _report_markdown(
+            config,
+            state,
+            backup=backup,
+            selection_report=selection_report,
+            execution=execution,
+            tests=tests,
+            publication=publication,
+            version=version,
+        ),
     )
     atomic_write_text(store.artifacts("selection.json"), dump_json(selection_report.to_dict()))
     if backup.manifest:
@@ -368,9 +412,10 @@ def _backup_line(backup: Backup) -> str:
     return f"`{backup.id}` ({backup.kind}, {backup.files} файла, `{backup.archive_sha256[:12]}`)"
 
 
-def _report_markdown(  # noqa: PLR0913
+def _report_markdown(
     config: Config,
     state: dict[str, Any],
+    *,
     backup: Backup,
     selection_report: SelectionReport,
     execution: ExecutionResult,
@@ -392,19 +437,35 @@ def _report_markdown(  # noqa: PLR0913
     lines.extend(f"- `{agent}`" for agent in selection_report.selection.agent_ids)
     if not selection_report.selection.agent_ids:
         lines.append("- (няма)")
-    lines.extend(["", "## Задачи", "", "| Задача | Агент | Статус | Пътища |", "| --- | --- | --- | --- |"])
-    for outcome in execution.outcomes:
-        lines.append(
-            f"| `{outcome.id}` | `{outcome.agent}` | {outcome.status} | "
-            f"{', '.join(f'`{path}`' for path in outcome.paths) or '—'} |"
-        )
+    lines.extend(
+        [
+            "",
+            "## Задачи",
+            "",
+            "| Задача | Агент | Статус | Пътища |",
+            "| --- | --- | --- | --- |",
+        ]
+    )
+    lines.extend(
+        f"| `{outcome.id}` | `{outcome.agent}` | {outcome.status} | "
+        f"{(', '.join(f'`{path}`' for path in outcome.paths)) or '—'} |"
+        for outcome in execution.outcomes
+    )
     exclusions = [*selection_report.excluded_agents, *selection_report.excluded_tasks]
     lines.extend(["", "## Изключени", ""])
     lines.extend(f"- `{item.id}` — {item.reason}" for item in exclusions)
     if not exclusions:
         lines.append("- (няма)")
     if tests is not None:
-        lines.extend(["", "## Тестове", "", "| Пакет | Задължителен | Статус | Изход | Време |", "| --- | --- | --- | --- | --- |"])
+        lines.extend(
+            [
+                "",
+                "## Тестове",
+                "",
+                "| Пакет | Задължителен | Статус | Изход | Време |",
+                "| --- | --- | --- | --- | --- |",
+            ]
+        )
         for suite in tests.suites:
             gate = "да" if suite.required else "не (не блокира)"
             lines.append(
@@ -433,7 +494,8 @@ def _report_markdown(  # noqa: PLR0913
 
 
 def _write_selection(store: StateStore, selection_report: SelectionReport) -> None:
-    atomic_write_text(store.artifacts("selected-agents.json"), dump_json(selection_report.to_dict()))
+    path = store.artifacts("selected-agents.json")
+    atomic_write_text(path, dump_json(selection_report.to_dict()))
 
 
 def _print_selection(selection_report: SelectionReport, *, dry_run: bool) -> None:
@@ -480,12 +542,21 @@ def _status(config: Config) -> int:
         return EXIT_OK
     state = store.load()
     _out(f"Състояние: {store.path}")
-    _out(f"  версия: {state.get('version', '?')} · фаза: {state.get('phase', '?')} · пускове: {state.get('runs', 0)}")
+    _out(
+        f"  версия: {state.get('version', '?')} · фаза: {state.get('phase', '?')} · "
+        f"пускове: {state.get('runs', 0)}"
+    )
     if state.get("first_run_started_at"):
-        _out(f"  първи пуск: {state['first_run_started_at']} → {state.get('first_run_completed_at') or 'незавършен'}")
+        _out(
+            f"  първи пуск: {state['first_run_started_at']} → "
+            f"{state.get('first_run_completed_at') or 'незавършен'}"
+        )
     backup = state.get("backup") or {}
     if backup:
-        _out(f"  бекъп: {backup.get('id')} · {backup.get('files')} файла · {backup.get('archive_sha256', '')[:12]}")
+        _out(
+            f"  бекъп: {backup.get('id')} · {backup.get('files')} файла · "
+            f"{backup.get('archive_sha256', '')[:12]}"
+        )
     tasks = state.get("tasks") or {}
     if isinstance(tasks, dict) and tasks:
         _out("  задачи:")

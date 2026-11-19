@@ -1,0 +1,48 @@
+# Ruff конфигурация само за инсталационния агент (`installer/`).
+#
+# Защо отделен файл: `libs/langchain_v1/pyproject.toml` включва `select = ["ALL"]`,
+# което прави `ruff check installer` безполезен като гейт — правилата за pytest
+# (`PT*`) и за докстринги на langchain не описват този пакет. Тук е зададен
+# собственият договор на пакета: строг, но съответстващ на stdlib-unittest стила.
+
+target-version = "py312"
+line-length = 100
+
+[lint]
+select = [
+    "E",     # pycodestyle
+    "F",     # pyflakes
+    "W",     # pycodestyle warnings
+    "I",     # isort
+    "UP",    # pyupgrade
+    "B",     # flake8-bugbear
+    "C4",    # flake8-comprehensions
+    "SIM",   # flake8-simplify
+    "ARG",   # flake8-unused-arguments
+    "PTH",   # flake8-use-pathlib
+    "PERF",  # perflint
+    "ISC",   # implicit string concatenation
+    "RET",   # flake8-return
+    "RUF",   # ruff-specific
+    "S",     # flake8-bandit
+    "PL",    # pylint
+]
+
+ignore = [
+    # Съобщенията към потребителя са на български; кирилицата неизбежно дава
+    # „двусмислени" Unicode знаци (а/е/о/р/с/х). Това е умишлено, не дефект.
+    "RUF001",
+    "RUF002",
+    "RUF003",
+    # Пълен списък на правилата за „твърде много аргументи/разклонения" би
+    # наложил изкуствено раздробяване на CLI функциите без реална полза.
+    "PLR0911",
+    "PLR0912",
+    "PLR0913",
+    "PLR0915",
+]
+
+[lint.per-file-ignores]
+# Тестовете са на stdlib `unittest` — `assert` не е наличен като стил, а
+# магьосническите числа и дългите описания са нормални за тестови тела.
+"tests/*" = ["S101", "S603", "S607", "PLR2004", "ARG001", "ARG002", "E501"]

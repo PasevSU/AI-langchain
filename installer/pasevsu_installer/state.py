@@ -8,9 +8,12 @@ migration; every later start is an idempotent re-check.
 from __future__ import annotations
 
 import json
+import os
+import time
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from .errors import LockError, StateError
 from .util import atomic_write_text, dump_json, read_text, utc_now
@@ -137,8 +140,6 @@ class StateStore:
             return {}
 
     def _lock_age_s(self) -> float | None:
-        import time
-
         try:
             return time.time() - self.lock_path.stat().st_mtime
         except OSError:
@@ -146,6 +147,4 @@ class StateStore:
 
 
 def _pid() -> int:
-    import os
-
     return os.getpid()

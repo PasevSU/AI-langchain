@@ -6,6 +6,7 @@ import shutil
 import unittest
 from pathlib import Path
 
+from pasevsu_installer import gitops
 from pasevsu_installer.config import Config
 from pasevsu_installer.errors import PublishError
 from pasevsu_installer.publisher import (
@@ -18,7 +19,6 @@ from pasevsu_installer.publisher import (
     write_publication_record,
     write_release_notes,
 )
-from pasevsu_installer import gitops
 from pasevsu_installer.util import read_text, run_command
 
 from .support import temp_root, write_text

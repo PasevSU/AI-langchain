@@ -15,7 +15,7 @@ from typing import Any
 
 from . import gitops
 from .errors import BackupError
-from .util import atomic_write_text, dump_json, sha256_file, utc_now, utc_stamp
+from .util import atomic_write_text, dump_json, sha256_file, sha256_text, utc_now, utc_stamp
 
 IGNORED_DIRS = frozenset({".git", ".installer", "__pycache__", ".pytest_cache", ".ruff_cache"})
 
@@ -62,7 +62,7 @@ class Backup:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Backup":
+    def from_dict(cls, data: dict[str, Any]) -> Backup:
         """Rebuild a backup record from persisted state."""
         return cls(
             id=str(data.get("id", "")),
@@ -198,8 +198,6 @@ def _walk(root: Path) -> list[Path]:
 
 
 def _walk_digest(root: Path) -> str:
-    from .util import sha256_text
-
     lines = [
         f"{relative.as_posix()}\0{sha256_file(root / relative)}" for relative in _walk(root)
     ]

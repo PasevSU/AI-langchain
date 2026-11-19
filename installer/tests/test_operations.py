@@ -24,25 +24,22 @@ class ResolveTargetTest(unittest.TestCase):
     """The repository root is a hard boundary."""
 
     def test_rejects_traversal(self) -> None:
-        with temp_root() as root:
-            with self.assertRaises(OperationError):
-                apply_change(
-                    OpContext(root),
-                    change("write_file_if_absent", path="../escape.md", content="x\n"),
-                )
+        with temp_root() as root, self.assertRaises(OperationError):
+            apply_change(
+                OpContext(root),
+                change("write_file_if_absent", path="../escape.md", content="x\n"),
+            )
 
     def test_rejects_absolute_path(self) -> None:
-        with temp_root() as root:
-            with self.assertRaises(OperationError):
-                apply_change(
-                    OpContext(root),
-                    change("write_file_if_absent", path="C:/Windows/x.md", content="x\n"),
-                )
+        with temp_root() as root, self.assertRaises(OperationError):
+            apply_change(
+                OpContext(root),
+                change("write_file_if_absent", path="C:/Windows/x.md", content="x\n"),
+            )
 
     def test_rejects_empty_path(self) -> None:
-        with temp_root() as root:
-            with self.assertRaises(OperationError):
-                apply_change(OpContext(root), change("assert_file_exists", path=""))
+        with temp_root() as root, self.assertRaises(OperationError):
+            apply_change(OpContext(root), change("assert_file_exists", path=""))
 
 
 class WriteFileIfAbsentTest(unittest.TestCase):
@@ -75,11 +72,10 @@ class WriteFileTest(unittest.TestCase):
     """Overwriting requires an explicit opt-in."""
 
     def test_requires_allow_overwrite(self) -> None:
-        with temp_root() as root:
-            with self.assertRaises(OperationError):
-                apply_change(
-                    OpContext(root), change("write_file", path="x.md", content="x\n")
-                )
+        with temp_root() as root, self.assertRaises(OperationError):
+            apply_change(
+                OpContext(root), change("write_file", path="x.md", content="x\n")
+            )
 
     def test_identical_content_is_unchanged(self) -> None:
         with temp_root() as root:
@@ -126,17 +122,16 @@ class AppendBlockIfAbsentTest(unittest.TestCase):
             )
 
     def test_marker_must_be_inside_content(self) -> None:
-        with temp_root() as root:
-            with self.assertRaises(OperationError):
-                apply_change(
-                    OpContext(root),
-                    change(
-                        "append_block_if_absent",
-                        path="README.md",
-                        marker="<!-- mark -->",
-                        content="без маркер\n",
-                    ),
-                )
+        with temp_root() as root, self.assertRaises(OperationError):
+            apply_change(
+                OpContext(root),
+                change(
+                    "append_block_if_absent",
+                    path="README.md",
+                    marker="<!-- mark -->",
+                    content="без маркер\n",
+                ),
+            )
 
 
 class ReplaceOnceTest(unittest.TestCase):
@@ -225,9 +220,8 @@ class UnknownOpTest(unittest.TestCase):
     """The operation set is closed."""
 
     def test_unknown_op_is_rejected(self) -> None:
-        with temp_root() as root:
-            with self.assertRaises(OperationError):
-                apply_change(OpContext(root), change("rm_rf", path="."))
+        with temp_root() as root, self.assertRaises(OperationError):
+            apply_change(OpContext(root), change("rm_rf", path="."))
 
 
 if __name__ == "__main__":

@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from .errors import OperationError
-from .util import CompletedCommand, read_text, run_command
+from .util import CompletedCommand, read_text, run_command, sha256_text
 
 LF_ENV = {
     "GIT_CONFIG_PARAMETERS": (
@@ -72,8 +72,6 @@ def tree_digest(root: Path) -> dict[str, Any]:
             continue
         entries.append(f"{path}\0{parts[1]}")
         files += 1
-    from .util import sha256_text
-
     return {"sha256": sha256_text("\n".join(sorted(entries))), "files": files}
 
 

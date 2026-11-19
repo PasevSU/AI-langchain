@@ -7,8 +7,11 @@ deterministic file operation. Nothing here touches the filesystem.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Any
+
+from .util import sha256_text
 
 AGENT_SCHEMA = "pasevsu.installer.agent.v1"
 STATE_SCHEMA = "pasevsu.installer.state.v1"
@@ -54,8 +57,6 @@ class Task:
 
     def fingerprint(self) -> str:
         """Return a stable digest of the task's declared behaviour."""
-        from .util import sha256_text  # local import keeps the model dependency-free
-
         payload = dump_fingerprint(
             {
                 "id": self.id,
@@ -126,6 +127,4 @@ MUTATING_OPS = frozenset(
 
 def dump_fingerprint(payload: Any) -> str:
     """Serialise ``payload`` canonically for hashing."""
-    import json
-
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)

@@ -51,9 +51,8 @@ class ValidationTest(unittest.TestCase):
     """Invalid configuration fails loudly, never silently."""
 
     def test_missing_file(self) -> None:
-        with temp_root() as root:
-            with self.assertRaises(ConfigError):
-                load_config(root)
+        with temp_root() as root, self.assertRaises(ConfigError):
+            load_config(root)
 
     def test_bad_json(self) -> None:
         with temp_root() as root:

@@ -8,9 +8,10 @@ repository root — traversal and absolute targets are rejected.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Any, Callable
+from typing import Any
 
 from .errors import OperationError
 from .model import Change

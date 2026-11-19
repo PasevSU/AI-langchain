@@ -65,10 +65,8 @@ class LockTest(unittest.TestCase):
         with temp_root() as root:
             store = StateStore(root)
             store.ensure()
-            with store.lock("first"):
-                with self.assertRaises(LockError):
-                    with store.lock("second"):
-                        pass
+            with store.lock("first"), self.assertRaises(LockError), store.lock("second"):
+                pass
 
     def test_stale_lock_is_stolen(self) -> None:
         with temp_root() as root:
@@ -86,9 +84,8 @@ class LockTest(unittest.TestCase):
         with temp_root() as root:
             store = StateStore(root)
             store.ensure()
-            with self.assertRaises(RuntimeError):
-                with store.lock("boom"):
-                    raise RuntimeError("boom")
+            with self.assertRaises(RuntimeError), store.lock("boom"):
+                raise RuntimeError("boom")
             self.assertFalse(store.lock_path.exists())
 
 

@@ -62,9 +62,8 @@ class ValidationTest(unittest.TestCase):
     """Invalid declarations are rejected with an actionable message."""
 
     def test_missing_directory(self) -> None:
-        with temp_root() as root:
-            with self.assertRaises(RegistryError):
-                load_declarations(root / "absent")
+        with temp_root() as root, self.assertRaises(RegistryError):
+            load_declarations(root / "absent")
 
     def test_empty_directory(self) -> None:
         with temp_root() as root:

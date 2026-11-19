@@ -8,8 +8,9 @@ skipped, so repeated runs converge instead of duplicating work.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any
 
 from .errors import RegistryError
 from .model import AgentDeclaration, Task, dump_fingerprint
@@ -127,12 +128,15 @@ def select(
                 )
                 continue
             previous = applied.get(task.id) if isinstance(applied, Mapping) else None
-            if isinstance(previous, Mapping) and previous.get("status") == APPLIED:
-                if previous.get("fingerprint") == task.fingerprint():
-                    exclusions.append(
-                        Exclusion("task", task.id, "вече приложена (идентичен fingerprint)")
-                    )
-                    continue
+            if (
+                isinstance(previous, Mapping)
+                and previous.get("status") == APPLIED
+                and previous.get("fingerprint") == task.fingerprint()
+            ):
+                exclusions.append(
+                    Exclusion("task", task.id, "вече приложена (идентичен fingerprint)")
+                )
+                continue
             tasks_by_id[task.id] = task
             agent_of[task.id] = declaration.id
 
