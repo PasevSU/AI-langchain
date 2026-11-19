@@ -1,7 +1,9 @@
 """Selection: deciding which agents and tasks may run.
 
-Rule of the install: **only agents with explicitly declared change tasks are
-executed**. Everything else is excluded, and every exclusion carries a reason an
+Rule of the install: **only agents with explicitly declared tasks are executed**.
+A task may declare changes, verifications, or both; a verification-only task acts
+as a guard — it writes nothing, runs on every pass, and a failed check blocks
+publication. Everything else is excluded, and every exclusion carries a reason an
 operator can read. Tasks already applied with an identical fingerprint are
 skipped, so repeated runs converge instead of duplicating work.
 """
@@ -122,14 +124,15 @@ def select(
                     Exclusion("task", task.id, "няма ясно заявена промяна (declared=false)")
                 )
                 continue
-            if not task.changes:
+            if not task.changes and not task.verify:
                 exclusions.append(
-                    Exclusion("task", task.id, "заявена, но без нито една промяна")
+                    Exclusion("task", task.id, "заявена, но без нито една операция")
                 )
                 continue
             previous = applied.get(task.id) if isinstance(applied, Mapping) else None
             if (
                 isinstance(previous, Mapping)
+                and task.writes_files
                 and previous.get("status") == APPLIED
                 and previous.get("fingerprint") == task.fingerprint()
             ):

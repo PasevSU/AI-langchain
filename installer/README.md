@@ -70,10 +70,16 @@ flowchart LR
 
 Променящи (само в `changes`): `write_file_if_absent`, `write_file`
 (изисква `allow_overwrite: true`), `append_block_if_absent`, `replace_once`,
-`emit_selection_manifest`.
+`emit_selection_manifest`, `copy_asset`, `bump_version`.
 
 Само за четене (само в `verify`): `assert_file_exists`, `assert_file_contains`,
-`assert_block_present`.
+`assert_block_present`, `assert_version`.
+
+`bump_version` записва една обявена версия навсякъде, където тя се декларира
+(`installer/VERSION`, `installer/pyproject.toml`,
+`installer/pasevsu_installer/__init__.py`), и не пипа файловете, които вече са на
+тази версия. Отчетената от него версия става версията на изданието — комитът,
+тагът и бележките се правят с нея.
 
 Пътищата извън корена на хранилището се отхвърлят.
 
@@ -96,7 +102,13 @@ flowchart LR
 ```
 
 Задача без `declared: true` не се изпълнява — причината се записва като
-„няма ясно заявена промяна“.
+„няма ясно заявена промяна“. Задача с `declared: true`, но без нито една
+операция (нито в `changes`, нито в `verify`) също се изключва.
+
+Задача само с `verify` (без `changes`) е разрешена: тя е **пазач** — не пипа
+нищо, пуска се при всяко изпълнение и провалена проверка спира публикуването.
+Такава задача никога не се отчита като „вече приложена“, защото не записва
+нищо.
 
 ## Артефакти от последното изпълнение
 

@@ -20,7 +20,7 @@ from pasevsu_installer.journal import Journal
 from pasevsu_installer.operations import FAILED, UNCHANGED, WRITE, OpResult
 from pasevsu_installer.selection import Selection
 
-from .support import change, task, temp_root
+from .support import change, task, temp_root, write_text
 
 
 def outcome(
@@ -315,6 +315,50 @@ class ExecutionResultTest(unittest.TestCase):
         self.assertEqual(payload["fingerprint"], "fp")
         self.assertEqual(payload["changed_paths"], [])
         self.assertEqual(payload["tasks"][0]["id"], "t1")
+
+
+class VerifyOnlyTest(unittest.TestCase):
+    """A task without changes still runs its assertions and can block a release."""
+
+    def test_passing_guard_is_unchanged(self) -> None:
+        with temp_root() as root:
+            write_text(root, "docs/NOTES.md", "здравей\n")
+            guard = task(
+                "t-guard",
+                changes=(),
+                verify=(change("assert_file_exists", path="docs/NOTES.md"),),
+            )
+            result = execute(Selection(tasks=(guard,)), root)
+            self.assertTrue(result.ok)
+            self.assertEqual(result.outcomes[0].status, PARTIAL)
+            self.assertFalse(result.outcomes[0].wrote)
+            self.assertEqual(result.changed_paths, ())
+            self.assertEqual(len(result.outcomes[0].verify), 1)
+            self.assertEqual(result.outcomes[0].paths, ("docs/NOTES.md",))
+
+    def test_failing_guard_stops_the_run(self) -> None:
+        with temp_root() as root:
+            guard = task(
+                "t-guard",
+                changes=(),
+                verify=(change("assert_file_exists", path="docs/NOPE.md"),),
+            )
+            result = execute(Selection(tasks=(guard,)), root)
+            self.assertFalse(result.ok)
+            self.assertEqual(result.outcomes[0].status, BROKEN)
+            self.assertIn("проверка", result.outcomes[0].error)
+
+    def test_dry_run_plans_the_guard(self) -> None:
+        with temp_root() as root:
+            guard = task(
+                "t-guard",
+                changes=(),
+                verify=(change("assert_file_exists", path="docs/NOPE.md"),),
+            )
+            result = execute(Selection(tasks=(guard,)), root, dry_run=True)
+            self.assertTrue(result.ok)
+            self.assertEqual(result.outcomes[0].status, PLANNED)
+            self.assertEqual(result.outcomes[0].verify, ())
 
 
 class ExecutionLedgerTest(unittest.TestCase):

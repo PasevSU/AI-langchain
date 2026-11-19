@@ -50,7 +50,9 @@ class RealRegistryTest(unittest.TestCase):
         for declaration in load_declarations(AGENTS_DIR):
             for task in declaration.tasks:
                 self.assertTrue(task.declared, msg=f"{task.id} не е declared")
-                self.assertTrue(task.writes_files, msg=f"{task.id} не пише файлове")
+                self.assertTrue(
+                    task.changes or task.verify, msg=f"{task.id} не прави нищо"
+                )
                 self.assertTrue(task.verify, msg=f"{task.id} няма verify стъпка")
 
     def test_disabled_agent_is_kept_visible(self) -> None:

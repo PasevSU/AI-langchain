@@ -61,6 +61,37 @@
           }
         }
       ]
+    },
+    {
+      "id": "tg-release-guard",
+      "title": "Пазач без промени — пуска се при всяко изпълнение",
+      "declared": true,
+      "risk": "low",
+      "scope": [
+        "installer/VERSION",
+        "installer/installer.config.json"
+      ],
+      "changes": [],
+      "verify": [
+        {
+          "op": "assert_version",
+          "params": {},
+          "note": "Трите места с версия трябва да съвпадат; това е и последната проверка преди публикуване."
+        },
+        {
+          "op": "assert_file_exists",
+          "params": {
+            "path": "installer/installer.config.json"
+          }
+        },
+        {
+          "op": "assert_file_contains",
+          "params": {
+            "path": "installer/installer.config.json",
+            "text": "installer-unit"
+          }
+        }
+      ]
     }
   ]
 }

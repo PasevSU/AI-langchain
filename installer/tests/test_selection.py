@@ -41,7 +41,30 @@ class SelectionTest(unittest.TestCase):
         agent = declaration(tasks=(task("t-one", changes=()),))
         result = select((agent,))
         self.assertTrue(result.empty)
-        self.assertIn("без нито една промяна", result.exclusions[0].reason)
+        self.assertIn("без нито една операция", result.exclusions[0].reason)
+
+    def test_verify_only_task_is_selected(self) -> None:
+        guard = (change("assert_file_exists", path="out/one.txt"),)
+        agent = declaration(tasks=(task("t-guard", changes=(), verify=guard),))
+        result = select((agent,))
+        self.assertEqual(result.task_ids, ("t-guard",))
+        self.assertFalse(result.empty)
+
+    def test_verify_only_task_runs_even_after_a_pass(self) -> None:
+        guard = (change("assert_file_exists", path="out/one.txt"),)
+        agent = declaration(tasks=(task("t-guard", changes=(), verify=guard),))
+        first = select((agent,))
+        state = {
+            "tasks": {
+                "t-guard": {
+                    "status": "applied",
+                    "fingerprint": first.tasks[0].fingerprint(),
+                }
+            }
+        }
+        second = select((agent,), state)
+        self.assertEqual(second.task_ids, ("t-guard",))
+        self.assertFalse(second.exclusions)
 
     def test_agent_without_tasks_is_excluded(self) -> None:
         agent = declaration(tasks=())
