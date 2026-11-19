@@ -58,7 +58,13 @@ from .selection import SelectionReport, report, select
 from .state import LOCK_TTL_S, StateStore
 from .tests_runner import TestReport, blockers, run_suites
 from .tests_runner import summarise as summarise_tests
-from .util import UI_ASSETS_DIR, atomic_write_text, dump_json, utc_now
+from .util import (
+    UI_ASSETS_DIR,
+    atomic_write_text,
+    dump_json,
+    ensure_utf8_stdio,
+    utc_now,
+)
 
 EXIT_OK = 0
 EXIT_FAILED = 1
@@ -138,6 +144,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def run(argv: Sequence[str] | None = None) -> int:
     """Execute the CLI and return a process exit code."""
+    ensure_utf8_stdio()
     args = build_parser().parse_args(list(argv) if argv is not None else None)
     root = Path(args.root).expanduser().resolve()
     if args.status:

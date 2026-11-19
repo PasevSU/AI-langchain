@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import io
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from pasevsu_installer.util import (
     CompletedCommand,
     atomic_write_text,
     dump_json,
+    ensure_utf8_stdio,
     read_text,
     run_command,
     sha256_file,
@@ -154,6 +157,41 @@ class CommandTest(unittest.TestCase):
         )
         self.assertTrue(result.ok, result.stderr)
         self.assertEqual(result.stdout.split(), ["added", "True", "True"])
+
+
+class StdioTest(unittest.TestCase):
+    """A legacy console code page must never break a command.
+
+    ``python -m pasevsu_installer status`` used to die with
+    ``UnicodeEncodeError: 'charmap' codec can't encode character '\\u2192'``
+    when the console was ``cp1251``, and would have died on the very first
+    Cyrillic character under ``cp1252``. The guard reconfigures the streams
+    instead of letting the interpreter raise.
+    """
+
+    def test_legacy_stream_is_switched_to_utf8(self) -> None:
+        buffer = io.BytesIO()
+        stream = io.TextIOWrapper(buffer, encoding="cp1251", errors="strict")
+        with (
+            mock.patch.object(sys, "stdout", stream),
+            mock.patch.object(sys, "stderr", stream),
+        ):
+            ensure_utf8_stdio()
+        self.assertEqual(stream.encoding, "utf-8")
+        self.assertEqual(stream.errors, "replace")
+        stream.write("Версия: 0.1.12 \u2192 0.1.13")
+        stream.flush()
+        self.assertTrue(buffer.getvalue().decode("utf-8").startswith("Версия"))
+
+    def test_streams_without_reconfigure_are_left_alone(self) -> None:
+        out, err = io.StringIO(), io.StringIO()
+        with (
+            mock.patch.object(sys, "stdout", out),
+            mock.patch.object(sys, "stderr", err),
+        ):
+            ensure_utf8_stdio()
+        out.write("все още пише")
+        self.assertEqual(out.getvalue(), "все още пише")
 
 
 if __name__ == "__main__":

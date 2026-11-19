@@ -6,9 +6,11 @@ installer agent can run inside a bare checkout with no ``uv`` environment.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -23,6 +25,25 @@ DEFAULT_TIMEOUT_S = 900
 PACKAGE_DIR = Path(__file__).resolve().parent
 #: Статичните активи на таблото за управление (публикуват се в `installer/gui`).
 UI_ASSETS_DIR = PACKAGE_DIR / "assets" / "gui"
+
+
+def ensure_utf8_stdio() -> None:
+    """Make ``stdout``/``stderr`` survive characters the console cannot encode.
+
+    A Windows console defaults to a legacy code page (``cp1251``, ``cp1252``,
+    ``cp866``...), so printing Bulgarian text or an arrow raises
+    ``UnicodeEncodeError`` and the command dies with a traceback before it has
+    done anything. Reconfiguring the streams to UTF-8 with ``errors="replace"``
+    keeps every verb usable on any code page and makes redirected output
+    deterministic. Streams without ``reconfigure`` (test doubles, pipes wrapped
+    by older callers) are left untouched.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        with contextlib.suppress(AttributeError, OSError, ValueError):
+            reconfigure(encoding="utf-8", errors="replace")
 
 
 def utc_now() -> str:
