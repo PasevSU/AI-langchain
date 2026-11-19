@@ -388,3 +388,25 @@ This repository has a generated `openwiki/` evidence index. It is optional just-
 The scheduled OpenWiki GitHub Actions workflow refreshes the repository wiki. Do not hand-edit generated OpenWiki pages unless explicitly asked; prefer updating source code/docs and letting OpenWiki regenerate.
 
 <!-- OPENWIKI:END -->
+
+<!-- pasevsu-installer:start -->
+
+## Installer agent
+
+`installer/` contains `pasevsu-installer-agent` — a stdlib-only Python package that
+performs the first-run migration of this repository and publishes the result.
+
+```bash
+python -m pasevsu_installer status
+python -m pasevsu_installer install --dry-run
+python -m pasevsu_installer install
+```
+
+Contract:
+
+- Only agents that declare an explicit change task in `installer/agents/*.json` are executed.
+- A verified backup (`installer-backup-*` git tag plus manifest) is taken before the first mutation.
+- Every required suite from `installer/installer.config.json` must pass before publishing.
+- Publishing commits to `installer/<version>` (never to `master`) and tags `installer-v<version>`.
+
+<!-- pasevsu-installer:end -->

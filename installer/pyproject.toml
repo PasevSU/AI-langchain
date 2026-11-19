@@ -1,0 +1,73 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pasevsu-installer"
+version = "0.1.0"
+description = "First-run migration agent for this LangChain fork (stdlib only, no dependencies)."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = []
+
+[tool.hatch.build.targets.wheel]
+packages = ["pasevsu_installer"]
+
+# ---------------------------------------------------------------------------
+# lint / types
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+  # Прекалено шумни за малък вътрешен пакет; следваме стила на libs/langchain_v1.
+  "ANN401", # Any в публичните API на операциите
+  "BLE",    # слепи except: тук нарочно улавяме и препредаваме
+  "C90",    # сложност
+  "COM812", # trailing comma — оставяме го на форматера
+  "CPY",    # copyright хедъри
+  "D203",   # конфликт с D211
+  "D213",   # конфликт с D212
+  "EM101",  # литерал в raise
+  "EM102",  # f-string в raise
+  "FIX002",
+  "PERF203",
+  "PLR09",  # твърде много аргументи/изрази — CLI-то е такова по природа
+  "S603",   # subprocess без shell — умишлено
+  "S607",   # частичен път до изпълним файл ("git", "python")
+  "T201",   # print в CLI
+  "TD002",
+  "TD003",
+  "TRY003", # съобщенията се строят на място, за да са на български
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.flake8-tidy-imports]
+# Относителни импорти в рамките на пакета са нарочни; излизане нагоре — не.
+ban-relative-imports = "parents"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+  "D1",     # тестовете се описват с името си
+  "PLR2004",
+  "S101",   # assert в тестове
+  "SLF001",
+  "T201",
+]
+
+[tool.mypy]
+strict = true
+python_version = "3.11"
+warn_unreachable = true
+pretty = true
+files = ["pasevsu_installer"]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false

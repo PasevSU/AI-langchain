@@ -1,0 +1,156 @@
+{
+  "schema": "pasevsu.installer.agent.v1",
+  "id": "installer-bootstrap",
+  "title": "Инсталационен агент — първично стартиране",
+  "status": "active",
+  "purpose": "Изпълнява реалната миграция при първо стартиране: заключва локалното състояние, документира инсталатора в AGENTS.md и добавя CI проверка за самия пакет.",
+  "scope": [
+    "installer/",
+    ".gitignore",
+    "AGENTS.md",
+    ".github/workflows/"
+  ],
+  "tasks": [
+    {
+      "id": "ins-gitignore-state",
+      "title": "Игнорирай локалното състояние на инсталатора",
+      "declared": true,
+      "risk": "low",
+      "scope": [
+        ".gitignore"
+      ],
+      "changes": [
+        {
+          "op": "append_block_if_absent",
+          "params": {
+            "path": ".gitignore",
+            "marker": "# >>> pasevsu-installer",
+            "content": "# >>> pasevsu-installer\n# Локално състояние на инсталационния агент — никога не се комитва.\n.installer/\n# <<< pasevsu-installer\n"
+          },
+          "note": "Състоянието (state.json, journal.jsonl, ключалка) остава локално."
+        }
+      ],
+      "verify": [
+        {
+          "op": "assert_block_present",
+          "params": {
+            "path": ".gitignore",
+            "marker": "# >>> pasevsu-installer"
+          }
+        },
+        {
+          "op": "assert_file_contains",
+          "params": {
+            "path": ".gitignore",
+            "text": ".installer/"
+          }
+        }
+      ]
+    },
+    {
+      "id": "ins-agents-md",
+      "title": "Опиши инсталатора в AGENTS.md",
+      "declared": true,
+      "risk": "low",
+      "scope": [
+        "AGENTS.md"
+      ],
+      "depends_on": [
+        "ins-gitignore-state"
+      ],
+      "changes": [
+        {
+          "op": "append_block_if_absent",
+          "params": {
+            "path": "AGENTS.md",
+            "marker": "<!-- pasevsu-installer:start -->",
+            "content": "<!-- pasevsu-installer:start -->\n\n## Installer agent\n\n`installer/` contains `pasevsu-installer-agent` — a stdlib-only Python package that\nperforms the first-run migration of this repository and publishes the result.\n\n```bash\npython -m pasevsu_installer status\npython -m pasevsu_installer install --dry-run\npython -m pasevsu_installer install\n```\n\nContract:\n\n- Only agents that declare an explicit change task in `installer/agents/*.json` are executed.\n- A verified backup (`installer-backup-*` git tag plus manifest) is taken before the first mutation.\n- Every required suite from `installer/installer.config.json` must pass before publishing.\n- Publishing commits to `installer/<version>` (never to `master`) and tags `installer-v<version>`.\n\n<!-- pasevsu-installer:end -->\n"
+          },
+          "note": "Никога не презаписва AGENTS.md — само добавя маркиран блок."
+        }
+      ],
+      "verify": [
+        {
+          "op": "assert_block_present",
+          "params": {
+            "path": "AGENTS.md",
+            "marker": "<!-- pasevsu-installer:start -->"
+          }
+        },
+        {
+          "op": "assert_file_contains",
+          "params": {
+            "path": "AGENTS.md",
+            "text": "pasevsu_installer"
+          }
+        }
+      ]
+    },
+    {
+      "id": "ins-ci-workflow",
+      "title": "Добави CI проверка за инсталатора",
+      "declared": true,
+      "risk": "low",
+      "scope": [
+        ".github/workflows/installer-agent.yml"
+      ],
+      "depends_on": [
+        "ins-agents-md"
+      ],
+      "changes": [
+        {
+          "op": "write_file_if_absent",
+          "params": {
+            "path": ".github/workflows/installer-agent.yml",
+            "content": "---\nname: installer-agent\n\non:\n  pull_request:\n    paths:\n      - \"installer/**\"\n  push:\n    branches: [master]\n    paths:\n      - \"installer/**\"\n\npermissions:\n  contents: read\n\njobs:\n  unit:\n    name: installer unit\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n\n      - uses: actions/setup-python@v5\n        with:\n          python-version: \"3.12\"\n\n      - name: Compile package\n        run: python -m compileall -q installer/pasevsu_installer\n\n      - name: Unit tests\n        run: python -m unittest discover -s installer/tests -t installer -v\n"
+          },
+          "note": "Пакетът е без зависимости, затова CI не инсталира нищо."
+        }
+      ],
+      "verify": [
+        {
+          "op": "assert_file_exists",
+          "params": {
+            "path": ".github/workflows/installer-agent.yml"
+          }
+        },
+        {
+          "op": "assert_file_contains",
+          "params": {
+            "path": ".github/workflows/installer-agent.yml",
+            "text": "pasevsu_installer"
+          }
+        }
+      ]
+    },
+    {
+      "id": "ins-selection-manifest",
+      "title": "Запиши манифест на избраните агенти и задачи",
+      "declared": true,
+      "risk": "low",
+      "scope": [
+        ".installer/selection-manifest.json"
+      ],
+      "depends_on": [
+        "ins-ci-workflow"
+      ],
+      "changes": [
+        {
+          "op": "emit_selection_manifest",
+          "params": {
+            "path": ".installer/selection-manifest.json"
+          },
+          "note": "Одитна следа: кой агент с коя задача е избран и кои са изключени."
+        }
+      ],
+      "verify": [
+        {
+          "op": "assert_file_exists",
+          "params": {
+            "path": ".installer/selection-manifest.json"
+          }
+        }
+      ]
+    }
+  ]
+}

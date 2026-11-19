@@ -78,3 +78,15 @@ LangChain helps developers build applications powered by LLMs through a standard
 - [LangChain Academy](https://academy.langchain.com/) — comprehensive, free courses on LangChain libraries and products, made by the LangChain team
 - [Contributing Guide](https://docs.langchain.com/oss/python/contributing/overview) — how to contribute and find good first issues
 - [Code of Conduct](https://github.com/langchain-ai/langchain/?tab=coc-ov-file) — community guidelines and standards
+
+<!-- pasevsu-installer:start -->
+
+## Installer agent
+
+This fork ships `installer/` — the `pasevsu-installer-agent`, which migrates the
+repository on first run and publishes the result.
+
+- [`installer/README.md`](installer/README.md) — usage, flags, exit codes
+- [`installer/AGENT-WORKFLOW.md`](installer/AGENT-WORKFLOW.md) — phases, gates, recovery
+
+<!-- pasevsu-installer:end -->

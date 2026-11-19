@@ -1,0 +1,116 @@
+{
+  "schema": "pasevsu.installer.config.v1",
+  "name": "pasevsu-installer-agent",
+  "version_file": "installer/VERSION",
+  "registry_dir": "installer/agents",
+  "state_dir": ".installer",
+  "release_notes_dir": "installer/RELEASE-NOTES",
+  "commit_scope": "installer",
+  "tag_prefix": "installer-v",
+  "backup": {
+    "enabled": true,
+    "tag_prefix": "installer-backup"
+  },
+  "publish": {
+    "enabled": true,
+    "push": true,
+    "allow_master": false
+  },
+  "test_suites": [
+    {
+      "id": "installer-compile",
+      "description": "Синтактична проверка на самия инсталационен агент.",
+      "command": [
+        "python",
+        "-m",
+        "compileall",
+        "-q",
+        "installer/pasevsu_installer"
+      ],
+      "cwd": ".",
+      "required": true,
+      "requires": [
+        "python"
+      ],
+      "skip_reason": "липсва python в PATH",
+      "timeout_s": 300
+    },
+    {
+      "id": "installer-unit",
+      "description": "Модулни тестове на инсталационния агент (stdlib unittest, без venv).",
+      "command": [
+        "python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "installer/tests",
+        "-t",
+        "installer"
+      ],
+      "cwd": ".",
+      "required": true,
+      "requires": [
+        "python"
+      ],
+      "skip_reason": "липсва python в PATH",
+      "timeout_s": 900
+    },
+    {
+      "id": "langchain-v1-sync",
+      "description": "Синхронизира зависимостите на langchain v1 с uv lock файла.",
+      "command": [
+        "uv",
+        "sync",
+        "--all-groups",
+        "--frozen"
+      ],
+      "cwd": "libs/langchain_v1",
+      "required": true,
+      "requires": [
+        "uv"
+      ],
+      "skip_reason": "липсва uv — инсталирайте с 'winget install --id astral-sh.uv'",
+      "timeout_s": 1800
+    },
+    {
+      "id": "langchain-v1-unit",
+      "description": "Модулните тестове на langchain v1 (без docker-базираните интеграционни). Независим от инсталатора: част от тестовете изискват POSIX (glob с '/', prlimit/preexec, /bin/sh) и падат на Windows — затова пакетът е незадължителен и не блокира публикуването.",
+      "command": [
+        "uv",
+        "run",
+        "--frozen",
+        "pytest",
+        "-q",
+        "tests/unit_tests"
+      ],
+      "cwd": "libs/langchain_v1",
+      "required": false,
+      "requires": [
+        "uv"
+      ],
+      "skip_reason": "липсва uv — инсталирайте с 'winget install --id astral-sh.uv'",
+      "timeout_s": 3600
+    },
+    {
+      "id": "langchain-v1-lint",
+      "description": "ruff и mypy върху langchain v1 (изисква make или uv).",
+      "command": [
+        "uv",
+        "run",
+        "--frozen",
+        "ruff",
+        "check",
+        "langchain",
+        "tests"
+      ],
+      "cwd": "libs/langchain_v1",
+      "required": false,
+      "requires": [
+        "uv"
+      ],
+      "skip_reason": "липсва uv — инсталирайте с 'winget install --id astral-sh.uv'",
+      "timeout_s": 1200
+    }
+  ]
+}

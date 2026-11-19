@@ -1,0 +1,39 @@
+{
+  "schema": "pasevsu.installer.agent.v1",
+  "id": "repo-hygiene",
+  "title": "Хигиена на хранилището (не е разрешен)",
+  "status": "disabled",
+  "purpose": "Задачи, които са описани, но НЕ са разрешени за автоматично прилагане. Агентът е изключен, за да се види в отчета, че изключването е измерено, а не мълчаливо.",
+  "scope": [
+    "installer/RELEASE-NOTES/"
+  ],
+  "tasks": [
+    {
+      "id": "hyg-release-notes-readme",
+      "title": "Опиши конвенцията за release notes",
+      "declared": true,
+      "risk": "low",
+      "scope": [
+        "installer/RELEASE-NOTES/README.md"
+      ],
+      "changes": [
+        {
+          "op": "write_file_if_absent",
+          "params": {
+            "path": "installer/RELEASE-NOTES/README.md",
+            "content": "# Release notes\n\nOne file per published installer version: `<version>.md`.\n\nThe installer writes this file itself right before publishing, then commits it\ntogether with the migration changes, so the tag `installer-v<version>` always\npoints at a commit that contains its own release notes.\n"
+          },
+          "note": "Ще се приложи само след като агентът бъде разрешен (status: active)."
+        }
+      ],
+      "verify": [
+        {
+          "op": "assert_file_exists",
+          "params": {
+            "path": "installer/RELEASE-NOTES/README.md"
+          }
+        }
+      ]
+    }
+  ]
+}
