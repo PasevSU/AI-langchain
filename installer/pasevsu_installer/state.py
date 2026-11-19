@@ -159,6 +159,19 @@ class StateStore:
         except OSError:
             return None
 
+    def lock_info(self) -> dict[str, Any]:
+        """Describe the current lock holder, or ``{}`` when no lock exists.
+
+        ``age_s`` is the age of the lock file in seconds; it is ``None`` when the
+        file vanished between the existence check and the ``stat`` call. Callers
+        must treat a missing ``age_s`` as "unknown", never as "stale".
+        """
+        if not self.lock_path.exists():
+            return {}
+        info = dict(self._read_lock())
+        info["age_s"] = self._lock_age_s()
+        return info
+
 
 def _pid() -> int:
     return os.getpid()

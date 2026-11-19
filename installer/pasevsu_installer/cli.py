@@ -24,6 +24,7 @@ Verbs and flags:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -41,7 +42,7 @@ from .publisher import Publication, publish, write_publication_record, write_rel
 from .registry import load_declarations
 from .registry import summarise as summarise_registry
 from .selection import SelectionReport, report, select
-from .state import StateStore
+from .state import LOCK_TTL_S, StateStore
 from .tests_runner import TestReport, blockers, run_suites
 from .tests_runner import summarise as summarise_tests
 from .util import UI_ASSETS_DIR, atomic_write_text, dump_json, utc_now
@@ -749,6 +750,18 @@ def _reset(config: Config, *, force: bool) -> int:
     if not force:
         _out("За да изтриете състоянието, добавете --force. Това не пипа бекъпите в git.")
         return EXIT_CONFIG
+    holder = store.lock_info()
+    age = holder.get("age_s")
+    age_s = int(age) if isinstance(age, int | float) else None
+    stale = age_s is not None and age_s >= LOCK_TTL_S
+    if holder and not stale and holder.get("pid") != os.getpid():
+        when = f"преди {age_s} s" if age_s is not None else "с неизвестна възраст"
+        _err(
+            f"ключалката се държи от друг процес (pid={holder.get('pid')}, "
+            f"цел={holder.get('purpose')}, {when})"
+        )
+        _err(f"Спрете процеса или изтрийте {store.lock_path} ръчно и опитайте отново.")
+        return EXIT_LOCKED
     if store.lock_path.exists():
         store.lock_path.unlink()
     if store.path.exists():
