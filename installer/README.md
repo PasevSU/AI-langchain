@@ -199,3 +199,31 @@ installer/
 ├── tests/                    unittest тестове
 └── RELEASE-NOTES/            бележки по версии (пишат се при публикуване)
 ```
+
+## Дистрибутив (wheel и sdist)
+
+Пакетът е с нула зависимости, затова се сглобява и пренася като един файл.
+Сглобяването става извън работното дърво — иначе непубликуваните артефакти
+вдигат шум в `git status` и в проверката за реални промени:
+
+```powershell
+uv run --no-project --with build python -m build installer --outdir C:\dev\_incoming\pkgdist
+```
+
+Получават се `pasevsu_installer-<версия>-py3-none-any.whl` (само кодът и
+GUI ресурсите) и `pasevsu_installer-<версия>.tar.gz` (добавя тестовете,
+декларациите и `scripts/`). Инсталиране без мрежа и без зависимости:
+
+```powershell
+python -m pip install --no-index --no-deps pasevsu_installer-<версия>-py3-none-any.whl
+python -m pasevsu_installer --help
+```
+
+Проверката, че пакетът е годен, не е „билдът мина“: инсталирайте wheel-а в
+нов `venv` и пуснете `--help` и `status --root <репо>`. Ако GUI ресурсите не
+са влезли в архива, `gui --serve` ще падне именно там.
+
+Задайте `$env:PYTHONUTF8='1'` и `$env:PYTHONIOENCODING='utf-8'`, преди да
+стартирате инсталатора в отделна среда — иначе кирилицата в отчета излиза
+като въпросителни знаци. Това е кодова страница на конзолата, не дефект в
+кода, и се вижда само когато средата е нова.

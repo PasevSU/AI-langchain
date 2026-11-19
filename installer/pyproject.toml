@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pasevsu-installer"
-version = "0.1.11"
+version = "0.1.12"
 description = "First-run migration agent for this LangChain fork (stdlib only, no dependencies)."
 readme = "README.md"
 requires-python = ">=3.11"
