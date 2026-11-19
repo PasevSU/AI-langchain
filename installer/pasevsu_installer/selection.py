@@ -5,22 +5,31 @@ A task may declare changes, verifications, or both; a verification-only task act
 as a guard — it writes nothing, runs on every pass, and a failed check blocks
 publication. Everything else is excluded, and every exclusion carries a reason an
 operator can read. Tasks already applied with an identical fingerprint are
-skipped, so repeated runs converge instead of duplicating work.
+skipped, so repeated runs converge instead of duplicating work — unless the
+artefact they declared is missing from the working tree (for example after
+switching to a branch that never received it), in which case the task is selected
+again.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
-from .errors import RegistryError
+from .errors import OperationError, RegistryError
 from .model import AgentDeclaration, Task, dump_fingerprint
+from .operations import resolve_target
 from .util import sha256_text
 
 APPLIED = "applied"
 FAILED = "failed"
 SKIPPED = "skipped"
+
+#: Operations whose effect is *the mere existence of a file*: a recorded
+#: "applied" is worthless when that file is not on the current branch.
+ABSENCE_OPS = frozenset({"write_file_if_absent", "copy_asset"})
 
 
 @dataclass(frozen=True)
@@ -90,8 +99,13 @@ def select(
     state: Mapping[str, Any] | None = None,
     *,
     only: Iterable[str] | None = None,
+    root: Path | None = None,
 ) -> Selection:
-    """Build the execution plan from declarations, state and an optional filter."""
+    """Build the execution plan from declarations, state and an optional filter.
+
+    When ``root`` is supplied, an already-applied task is only skipped if the
+    files it creates are still present there; a vanished artefact re-selects it.
+    """
     wanted = {value.strip() for value in only} if only is not None else None
     known = {declaration.id for declaration in declarations}
     if wanted is not None:
@@ -102,6 +116,7 @@ def select(
     tasks_by_id: dict[str, Task] = {}
     agent_of: dict[str, str] = {}
     exclusions: list[Exclusion] = []
+    restored: list[str] = []
     applied: Mapping[str, Any] = _state_tasks(state)
 
     for declaration in declarations:
@@ -136,21 +151,24 @@ def select(
                 and previous.get("status") == APPLIED
                 and previous.get("fingerprint") == task.fingerprint()
             ):
-                exclusions.append(
-                    Exclusion("task", task.id, "вече приложена (идентичен fingerprint)")
-                )
-                continue
+                gone = _missing_targets(root, task) if root is not None else ()
+                if not gone:
+                    exclusions.append(
+                        Exclusion("task", task.id, "вече приложена (идентичен fingerprint)")
+                    )
+                    continue
+                restored.append(task.id)
             tasks_by_id[task.id] = task
             agent_of[task.id] = declaration.id
 
-    regenerated: list[str] = []
+    regenerated: list[str] = list(restored)
     for task in tasks_by_id.values():
         previous = applied.get(task.id)
         if not isinstance(previous, Mapping):
             continue
         if previous.get("status") != APPLIED:
             continue
-        if previous.get("fingerprint") != task.fingerprint():
+        if previous.get("fingerprint") != task.fingerprint() and task.id not in regenerated:
             regenerated.append(task.id)
 
     ordered = _topological(list(tasks_by_id.values()), tasks_by_id, applied, exclusions)
@@ -163,6 +181,24 @@ def select(
         regenerated=tuple(regenerated),
         fingerprint=fingerprint,
     )
+
+
+def _missing_targets(root: Path, task: Task) -> tuple[str, ...]:
+    """Declared files that a task creates but that the tree does not have."""
+    missing: list[str] = []
+    for change in task.changes:
+        if change.op not in ABSENCE_OPS:
+            continue
+        raw = change.params.get("path")
+        if not isinstance(raw, str) or not raw.strip():
+            continue
+        try:
+            target = resolve_target(root, raw)
+        except OperationError:
+            continue
+        if not target.exists():
+            missing.append(raw)
+    return tuple(missing)
 
 
 def _state_tasks(state: Mapping[str, Any] | None) -> Mapping[str, Any]:

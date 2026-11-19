@@ -278,7 +278,7 @@ def _run_locked(
         raise
     journal.append("registry", summary=summarise_registry(declarations))
 
-    selection = select(declarations, state, only=agents or None)
+    selection = select(declarations, state, only=agents or None, root=config.root)
     selection_report = report(selection)
     _write_selection(store, selection_report)
     journal.append("selection", **selection_report.to_dict())

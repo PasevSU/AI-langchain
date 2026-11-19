@@ -7,7 +7,7 @@ import unittest
 from pasevsu_installer.errors import RegistryError
 from pasevsu_installer.selection import report, select
 
-from .support import change, declaration, task
+from .support import change, declaration, task, temp_root, write_text
 
 
 def _write(path: str = "out/one.txt", content: str = "one\n") -> tuple:
@@ -145,6 +145,21 @@ class SelectionTest(unittest.TestCase):
     def test_fingerprint_is_stable(self) -> None:
         agent = declaration(tasks=(task("t-one", changes=_write()),))
         self.assertEqual(select((agent,)).fingerprint, select((agent,)).fingerprint)
+
+    def test_vanished_artefact_reselects_the_task(self) -> None:
+        """A branch that never received the file must get it on the next run."""
+        with temp_root() as root:
+            agent = declaration(tasks=(task("t-one", changes=_write()),))
+            first = select((agent,), root=root)
+            fingerprint = first.tasks[0].fingerprint()
+            state = {"tasks": {"t-one": {"status": "applied", "fingerprint": fingerprint}}}
+            second = select((agent,), state, root=root)
+            write_text(root, "out/one.txt", "one\n")
+            third = select((agent,), state, root=root)
+        self.assertEqual(second.task_ids, ("t-one",))
+        self.assertEqual(second.regenerated, ("t-one",))
+        self.assertTrue(third.empty)
+        self.assertIn("вече приложена", third.exclusions[0].reason)
 
 
 class ReportTest(unittest.TestCase):
