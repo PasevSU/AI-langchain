@@ -224,6 +224,24 @@ class ProtectedBranchTest(unittest.TestCase):
             )
         self.assertEqual(current.stdout.strip(), "installer/0.1.0")
 
+    def test_published_branch_is_never_hijacked(self) -> None:
+        """A run standing on ``installer/0.1.9`` must not append to ``installer/0.1.8``."""
+        with temp_root() as root:
+            _init_repo(root)
+            write_text(root, "a.txt", "x\n")
+            config = _config(root, push=False)
+            publish(config, version="0.1.8", paths=("a.txt",), summary="осми пуск")
+            run_command([GIT, "switch", "-c", "installer/0.1.9"], cwd=root, timeout=120)
+            write_text(root, "b.txt", "y\n")
+            with self.assertRaises(PublishError):
+                publish(config, version="0.1.8", paths=("b.txt",), summary="закъснял пуск")
+            current = run_command(
+                [GIT, "rev-parse", "--abbrev-ref", "HEAD"], cwd=root, timeout=120
+            )
+            log = run_command([GIT, "rev-list", "--count", "HEAD"], cwd=root, timeout=120)
+        self.assertEqual(current.stdout.strip(), "installer/0.1.9")
+        self.assertEqual(log.stdout.strip(), "2")
+
 
 @unittest.skipIf(GIT is None, "git липсва в PATH")
 class RepublishTest(unittest.TestCase):

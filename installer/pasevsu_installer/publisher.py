@@ -118,6 +118,12 @@ def publish(
     current = revision.get("branch") or ""
     target_branch = _target_branch(config, current, version)
     if not dry_run and target_branch != current:
+        if gitops.branch_exists(root, target_branch):
+            raise PublishError(
+                f"текущият клон „{current}“ не съвпада с клона за версия {version} "
+                f"(„{target_branch}“), който вече съществува — преминете към него ръчно, "
+                "за да не попадне непубликуван пуск в завършен релиз"
+            )
         _switch_branch(root, target_branch)
 
     tag_name = f"{config.tag_prefix}{version}"
