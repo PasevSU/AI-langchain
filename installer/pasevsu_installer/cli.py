@@ -353,6 +353,23 @@ def _run_locked(
         state["version"] = version
         state = store.save(state)
 
+    if not dry_run and not force and not _substantive_paths(config, execution.changed_paths):
+        journal.append("noop", stage="post-apply", tasks=len(execution.outcomes))
+        state = store.record_run(
+            state,
+            _history_entry(
+                journal,
+                execution,
+                phase="noop",
+                version=version,
+                fingerprint=selection.fingerprint,
+            ),
+        )
+        state = store.save(_phase(store, journal, state, "noop"))
+        _record(None, None)
+        _out("Задачите са проверени, но нищо не е променено — без тестове и без публикуване.")
+        return EXIT_OK
+
     tests: TestReport | None = None
     if run_tests and not dry_run:
         state = store.save(_phase(store, journal, state, "tests"))
@@ -411,6 +428,20 @@ def _run_locked(
     _record(tests, publication)
     _out("Готово: миграцията приключи.")
     return EXIT_OK
+
+
+def _substantive_paths(config: Config, paths: Sequence[str]) -> list[str]:
+    """Пътища, които наистина заслужават публикуване.
+
+    Изключва се само служебната папка на инсталатора. Версионните сайтове
+    СЕ ВКЛЮЧВАТ: вдигната версия, която не се комитне, оставя мръсно дърво.
+    """
+    prefix = f"{config.state_dir.rstrip('/')}/"
+    return [
+        item
+        for item in paths
+        if item and not item.startswith(prefix) and item != config.state_dir
+    ]
 
 
 def _history_entry(
